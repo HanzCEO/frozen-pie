@@ -13,6 +13,7 @@ import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
+import { printConfiguredPackages } from "./cli/list-packages.ts";
 import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
@@ -509,6 +510,12 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (parsed.version) {
 		console.log(VERSION);
+		process.exit(0);
+	}
+
+	if (parsed.list) {
+		// Read-only listing: load both global and project settings regardless of project trust.
+		printConfiguredPackages(cwd, agentDir, SettingsManager.create(cwd, agentDir));
 		process.exit(0);
 	}
 

@@ -214,6 +214,14 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--list flag", () => {
+		test("parses --list flag", () => {
+			const result = parseArgs(["--list"]);
+			expect(result.list).toBe(true);
+			expect(result.messages).toEqual([]);
+		});
+	});
+
 	describe("--extension flag", () => {
 		test("parses single --extension", () => {
 			const result = parseArgs(["--extension", "./my-extension.ts"]);

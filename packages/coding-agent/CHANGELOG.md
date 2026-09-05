@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Restored listing configured packages from settings as `pi --list`, replacing the removed `pi list` command.
+
 ### Fixed
 
 - Fixed configurable save keybindings in the model and thinking selectors ([#8797](https://github.com/earendil-works/pi/issues/8797)).
