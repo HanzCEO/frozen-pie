@@ -20,21 +20,8 @@ export interface ApiKeyCredential {
 	env?: ProviderEnv;
 }
 
-/** OAuth token data returned by extension compatibility flows. */
-export interface OAuthCredentials {
-	refresh: string;
-	access: string;
-	expires: number;
-	[key: string]: unknown;
-}
-
-/** Stored canonical OAuth credential. */
-export interface OAuthCredential extends OAuthCredentials {
-	type: "oauth";
-}
-
 /** One type-tagged credential per provider — the shape of today's auth.json. */
-export type Credential = ApiKeyCredential | OAuthCredential;
+export type Credential = ApiKeyCredential;
 
 /** Non-secret credential metadata for account/status enumeration. */
 export interface CredentialInfo {
@@ -50,9 +37,7 @@ export interface AuthOperationOptions {
 /**
  * App-owned credential storage, keyed by `Provider.id`, one credential per
  * provider. `modify` is the only write path, so every mutation is a
- * serialized read-modify-write; `Models.getAuth()` runs OAuth refresh inside
- * `modify` so concurrent requests cannot double-refresh a rotated token. The
- * app persists a credential after login via
+ * serialized read-modify-write. The app persists a credential after login via
  * `modify(provider.id, async () => credential)`. Login/logout orchestration
  * is app-owned.
  *
@@ -64,8 +49,8 @@ export interface AuthOperationOptions {
  */
 export interface CredentialStore {
 	/**
-	 * Read the stored credential, possibly expired. Display/status use;
-	 * resolved request auth comes from `Models.getAuth()`.
+	 * Read the stored credential. Display/status use; resolved request auth
+	 * comes from `Models.getAuth()`.
 	 */
 	read(providerId: string, options?: AuthOperationOptions): Promise<Credential | undefined>;
 
@@ -77,11 +62,10 @@ export interface CredentialStore {
 
 	/**
 	 * Serialized write — the only write path. `fn` sees the current credential
-	 * because correct writes (refresh, login-during-refresh) depend on it;
-	 * return the new credential, or undefined to leave the entry unchanged.
-	 * Mutual exclusion per provider id, cross-process too where the backing
-	 * store supports it (e.g. a file lock). Resolves with the post-write
-	 * credential. Rejections from `fn` propagate.
+	 * because correct writes depend on it; return the new credential, or
+	 * undefined to leave the entry unchanged. Mutual exclusion per provider id,
+	 * cross-process too where the backing store supports it (e.g. a file lock).
+	 * Resolves with the post-write credential. Rejections from `fn` propagate.
 	 */
 	modify(
 		providerId: string,
@@ -105,28 +89,25 @@ export interface AuthResult {
 	auth: ModelAuth;
 	/** Provider-scoped environment/config values resolved from credentials and ambient context. */
 	env?: ProviderEnv;
-	/** Human-readable label for status UI: "ANTHROPIC_API_KEY", "OAuth", "~/.aws/credentials". */
+	/** Human-readable label for status UI: "ANTHROPIC_API_KEY", "~/.aws/credentials". */
 	source?: string;
 }
 
 export interface AuthCheck {
 	source?: string;
-	type: "api_key" | "oauth";
+	type: "api_key";
 }
 
-export type AuthType = "api_key" | "oauth";
+export type AuthType = "api_key";
 
 /**
  * Prompt shown to the user during login. `signal` lets the flow cancel a
- * pending prompt when an out-of-band event resolves the step, e.g. a
- * `manual_code` prompt raced against a callback server, aborted when the
- * callback wins.
+ * pending prompt when an out-of-band event resolves the step.
  */
 export type AuthPrompt = { signal?: AbortSignal } & (
 	| { type: "text"; message: string; placeholder?: string }
 	| { type: "secret"; message: string; placeholder?: string }
 	| { type: "select"; message: string; options: readonly { id: string; label: string; description?: string }[] }
-	| { type: "manual_code"; message: string; placeholder?: string }
 );
 
 export interface AuthInfoLink {
@@ -136,18 +117,10 @@ export interface AuthInfoLink {
 
 export type AuthEvent =
 	| { type: "info"; message: string; links?: readonly AuthInfoLink[] }
-	| { type: "auth_url"; url: string; instructions?: string }
-	| {
-			type: "device_code";
-			userCode: string;
-			verificationUri: string;
-			intervalSeconds?: number;
-			expiresInSeconds?: number;
-	  }
 	| { type: "progress"; message: string };
 
 /**
- * Login interaction callbacks serving both api-key and OAuth flows.
+ * Login interaction callbacks serving the api-key flow.
  *
  * `prompt()` returns the entered/selected string (`select` returns the option
  * id). Rejects on cancel/abort. `signal` aborts the whole login flow;
@@ -199,42 +172,10 @@ export interface ApiKeyAuth {
 }
 
 /**
- * OAuth auth. The `refresh`/`toAuth` split lets `Models` own the locked
- * refresh pattern: `refresh` produces a credential, `toAuth` derives request
- * auth from whatever credential ends up stored.
- */
-export interface OAuthAuth {
-	/** Display name, e.g. "Anthropic (Claude Pro/Max)". */
-	name: string;
-
-	/** Whether access through this auth method is backed by a provider subscription. */
-	isSubscription?: boolean;
-
-	/** Selector label for the OAuth login option, e.g. "Sign in with SuperGrok or X Premium". */
-	loginLabel?: string;
-
-	login(interaction: ProviderAuthInteraction): Promise<OAuthCredential>;
-
-	/**
-	 * Exchange the refresh token. Network call; throws on failure
-	 * (invalid_grant etc.). `Models` runs this under the store lock.
-	 */
-	refresh(credential: OAuthCredential, signal: AbortSignal): Promise<OAuthCredential>;
-
-	/**
-	 * Side-effect-free derivation of request auth from a valid credential.
-	 * Covers per-credential baseUrl (GitHub Copilot). Async so lazy wrappers
-	 * can load the implementation on first use.
-	 */
-	toAuth(credential: OAuthCredential): Promise<ModelAuth>;
-}
-
-/**
- * Provider auth. At least one of `apiKey`/`oauth` must be present: even
- * ambient-credential providers and keyless local servers provide `apiKey`
- * auth whose `resolve()` reports whether the provider is configured.
+ * Provider auth. Every provider has `apiKey` auth: even ambient-credential
+ * providers and keyless local servers provide `apiKey` auth whose `resolve()`
+ * reports whether the provider is configured.
  */
 export interface ProviderAuth {
 	apiKey?: ApiKeyAuth;
-	oauth?: OAuthAuth;
 }

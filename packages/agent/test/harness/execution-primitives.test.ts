@@ -1,17 +1,9 @@
 import { fauxProvider } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
-import {
-	BACKGROUND_CONTEXT,
-	createContextKey,
-	getTelemetryContext,
-	withAbortSignal,
-	withContextValue,
-	withTelemetryContext,
-} from "../../src/harness/context.ts";
+import { BACKGROUND_CONTEXT, createContextKey, withAbortSignal, withContextValue } from "../../src/harness/context.ts";
 import { HarnessEventBus } from "../../src/harness/events.ts";
 import { AbortRequested, createGate } from "../../src/harness/execution/effect-gate.ts";
 import { HookRegistry } from "../../src/harness/hooks.ts";
-import { InMemoryTelemetryContext } from "../../src/index.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
 	let resolvePromise: (() => void) | undefined;
@@ -155,39 +147,29 @@ describe("HookRegistry", () => {
 		expect(admittedSignal?.reason).toBe(gateReason);
 	});
 
-	it("passes tool handlers a child context of the active hook span", async () => {
-		const telemetry = new InMemoryTelemetryContext();
+	it("passes tool handlers a child context", async () => {
 		const valueKey = createContextKey<string>("hook.test.value");
 		const hooks = new HookRegistry(() => {});
 		let receivedValue: string | undefined;
 		hooks.on("before_tool", async (_event, context) => {
 			receivedValue = context.value(valueKey);
-			await getTelemetryContext(context).startSpan({ name: "handler.child" }, () => undefined);
 			return undefined;
 		});
 
-		await telemetry.startSpan({ name: "invocation" }, (invocationSpan) =>
-			hooks.runToolWithGate(
-				"before_tool",
-				{
-					lane: "main",
-					runId: "run",
-					toolCallId: "call",
-					toolName: "tool",
-					args: {},
-				},
-				createGate().gate,
-				withContextValue(valueKey, "preserved", withTelemetryContext(invocationSpan, BACKGROUND_CONTEXT)),
-			),
+		await hooks.runToolWithGate(
+			"before_tool",
+			{
+				lane: "main",
+				runId: "run",
+				toolCallId: "call",
+				toolName: "tool",
+				args: {},
+			},
+			createGate().gate,
+			withContextValue(valueKey, "preserved", BACKGROUND_CONTEXT),
 		);
 
 		expect(receivedValue).toBe("preserved");
-		const spans = telemetry.getSpans();
-		const invocationSpan = spans.find((span) => span.name === "invocation");
-		const hookSpan = spans.find((span) => span.name === "pi.harness.hook");
-		const handlerSpan = spans.find((span) => span.name === "handler.child");
-		expect(hookSpan?.parentId).toBe(invocationSpan?.id);
-		expect(handlerSpan?.parentId).toBe(hookSpan?.id);
 	});
 
 	it("treats registration ids as optional metadata and fails before_drive closed", async () => {
@@ -301,36 +283,6 @@ describe("HookRegistry", () => {
 			BACKGROUND_CONTEXT,
 		);
 		expect(result).toEqual({ content: [{ type: "text", text: "patched" }], isError: false });
-	});
-
-	it("accepts explicit false structural declines and rejects true conflicts", async () => {
-		const errors: Error[] = [];
-		const hooks = new HookRegistry((error) => {
-			errors.push(error);
-		});
-		const ignored = { summary: "ignored", readFiles: [], modifiedFiles: [] };
-		const selected = { summary: "selected", readFiles: [], modifiedFiles: [] };
-		hooks.on("before_navigation", () => ({ decline: true, summary: ignored }));
-		hooks.on("before_navigation", () => ({ decline: false, summary: selected }));
-
-		const result = await hooks.runWithGate(
-			"before_navigation",
-			{
-				lane: "main",
-				runId: "run",
-				targetId: "target",
-				preparation: {
-					messages: [],
-					fileOps: { read: new Set(), written: new Set(), edited: new Set() },
-					totalTokens: 0,
-				},
-			},
-			createGate().gate,
-			BACKGROUND_CONTEXT,
-		);
-		expect(result).toEqual({ decline: false, summary: selected });
-		expect(errors).toHaveLength(1);
-		expect(errors[0].message).toMatch(/cannot return both decline and summary/);
 	});
 
 	it("admits the complete before_drive pipeline as one gated effect", async () => {

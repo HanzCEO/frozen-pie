@@ -6,9 +6,8 @@ import {
 	type NewEntry,
 	operationScopeOf,
 	type StartingOperation,
-	type SummaryDecidingOperation,
 } from "../../session/types.ts";
-import { branchTip, operationPreparation, setValue } from "../../session/values.ts";
+import { branchTip, setValue } from "../../session/values.ts";
 import type { Lane } from "../lane.ts";
 import { chainEntries, committedEntryEvents } from "../transcript.ts";
 import type { Drive, ProcedureResult } from "../types.ts";
@@ -19,7 +18,6 @@ import {
 	finishRunBoundary,
 	planBoundaryInbox,
 } from "./boundary.ts";
-import { prepareCompactionThreshold } from "./structural.ts";
 
 /** Consume before_run and commit the initial checkpoint. */
 export async function startRun<TContext extends object | undefined>(
@@ -71,7 +69,7 @@ export async function startRun<TContext extends object | undefined>(
 			const nextState: CheckpointOperation = {
 				...operationScopeOf(current),
 				at: "checkpoint",
-				continuation: { kind: "need_assistant", overflowRecoveryUsed: false },
+				continuation: { kind: "need_assistant" },
 				triggerEntryId,
 			};
 			return {
@@ -97,8 +95,6 @@ export async function runCheckpoint<TContext extends object | undefined>(
 	drive: Drive,
 	run: CheckpointOperation,
 ): Promise<ProcedureResult> {
-	const threshold = await prepareCompactionThreshold(lane, drive, run);
-	if (threshold.kind === "cancel_requested") return { kind: "continue" };
 	const planned = await lane.continueOperation<CheckpointOperation, ProcedureResult | BoundaryFinishPending>(
 		run,
 		async (state, current, _meta, reader) => {
@@ -109,66 +105,23 @@ export async function runCheckpoint<TContext extends object | undefined>(
 				current,
 				reader,
 				state.tipId,
-				threshold.value === undefined && current.continuation.kind === "may_finish",
+				current.continuation.kind === "may_finish",
 			);
 			if (placement.triggerEntryId !== undefined) {
 				return {
 					kind: "commit",
 					writes: placement.writes,
-					operationState: assistantReadyAtBoundary(lane, state, current, placement.triggerEntryId, false),
+					operationState: assistantReadyAtBoundary(lane, state, current, placement.triggerEntryId),
 					lane: { tipId: placement.tipId, inbox: placement.inbox },
 					materialize: () => ({ kind: "continue" }) as const,
 					events: (commit) => boundaryPlacementEvents(placement, commit, 0, lane.name, drive.operationId),
-				};
-			}
-			if (threshold.value !== undefined) {
-				const structural: SummaryDecidingOperation = {
-					...operationScopeOf(current),
-					at: "summary.deciding",
-					task: {
-						taskId: threshold.value.taskId,
-						reason: "threshold",
-						boundary: {
-							kind: "resume_checkpoint",
-							resumeAfter: { continuation: current.continuation, triggerEntryId: current.triggerEntryId },
-						},
-					},
-				};
-				return {
-					kind: "commit",
-					writes: [
-						...placement.writes,
-						setValue(
-							operationPreparation(drive.operationId, threshold.value.taskId),
-							threshold.value.preparation,
-						),
-					],
-					operationState: structural,
-					lane: { tipId: placement.tipId, inbox: placement.inbox },
-					materialize: () => ({ kind: "continue" }) as const,
-					events: (commit) => [
-						...boundaryPlacementEvents(placement, commit, 0, lane.name, drive.operationId),
-						{
-							type: "compaction_start",
-							lane: lane.name,
-							runId: drive.operationId,
-							reason: "threshold",
-							startedAt: commit.timestamp,
-						},
-					],
 				};
 			}
 			if (current.continuation.kind === "need_assistant") {
 				return {
 					kind: "commit",
 					writes: placement.writes,
-					operationState: assistantReadyAtBoundary(
-						lane,
-						state,
-						current,
-						current.triggerEntryId,
-						current.continuation.overflowRecoveryUsed,
-					),
+					operationState: assistantReadyAtBoundary(lane, state, current, current.triggerEntryId),
 					lane: { tipId: placement.tipId, inbox: placement.inbox },
 					materialize: () => ({ kind: "continue" }) as const,
 					events: (commit) => boundaryPlacementEvents(placement, commit, 0, lane.name, drive.operationId),

@@ -5,8 +5,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
-const cliPath = resolve(__dirname, "../src/cli.ts");
-const sourceResolverPath = resolve(__dirname, "../src/experimental/source-resolver.ts");
+const cliPath = resolve(__dirname, "../dist/cli.js");
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -24,7 +23,7 @@ function createTempDir(): string {
 async function runCli(args: string[], cwd: string, agentDir: string): Promise<{ code: number | null; stderr: string }> {
 	let stderr = "";
 	const code = await new Promise<number | null>((resolvePromise, reject) => {
-		const child = spawn(process.execPath, ["--import", sourceResolverPath, cliPath, ...args], {
+		const child = spawn(process.execPath, [cliPath, ...args], {
 			cwd,
 			env: {
 				...process.env,

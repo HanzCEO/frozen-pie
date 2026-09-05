@@ -113,9 +113,6 @@ describe("regression #2860: replaced session callbacks", () => {
 					},
 					navigateTree: async (targetId, options) => {
 						const result = await session.navigateTree(targetId, {
-							summarize: options?.summarize,
-							customInstructions: options?.customInstructions,
-							replaceInstructions: options?.replaceInstructions,
 							label: options?.label,
 						});
 						return { cancelled: result.cancelled };

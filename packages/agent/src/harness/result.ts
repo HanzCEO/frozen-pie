@@ -53,7 +53,7 @@ export function TaggedError<Tag extends string>(tag: Tag): TaggedErrorFactory<Ta
 export class LaneBusy extends TaggedError("LaneBusy")<{
 	lane: string;
 	operationId: string;
-	operationKind: "run" | "compaction" | "navigation";
+	operationKind: "run" | "navigation";
 	message: string;
 }> {}
 export class OperationMismatch extends TaggedError("OperationMismatch")<{
@@ -66,7 +66,6 @@ export class OperationMismatch extends TaggedError("OperationMismatch")<{
 export class NoActiveRun extends TaggedError("NoActiveRun")<{ lane: string; message: string }> {}
 export class NoActiveOperation extends TaggedError("NoActiveOperation")<{ lane: string; message: string }> {}
 export class NothingToResume extends TaggedError("NothingToResume")<{ lane: string; message: string }> {}
-export class NothingToCompact extends TaggedError("NothingToCompact")<{ lane: string; message: string }> {}
 export class InvalidMessage extends TaggedError("InvalidMessage")<{
 	lane: string;
 	reason: string;

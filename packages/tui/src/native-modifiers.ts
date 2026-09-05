@@ -24,14 +24,10 @@ function loadNativeModifiersHelper(): NativeModifiersHelper | undefined {
 	const arch = process.arch;
 	if (arch !== "x64" && arch !== "arm64") return undefined;
 
-	let nativePath: string;
-	if (process.platform === "darwin") {
-		nativePath = path.join("native", "darwin", "prebuilds", `darwin-${arch}`, "darwin-modifiers.node");
-	} else if (process.platform === "win32") {
-		nativePath = path.join("native", "win32", "prebuilds", `win32-${arch}`, "win32-console-mode.node");
-	} else {
+	if (process.platform !== "darwin") {
 		return undefined;
 	}
+	const nativePath = path.join("native", "darwin", "prebuilds", `darwin-${arch}`, "darwin-modifiers.node");
 
 	for (const modulePath of getNativeModuleCandidates(nativePath)) {
 		try {

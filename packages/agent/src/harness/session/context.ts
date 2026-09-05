@@ -1,24 +1,13 @@
 import type { AgentMessage } from "../../types.ts";
 import type { Context } from "../context.ts";
-import { createBranchSummaryMessage, createCompactionSummaryMessage } from "../messages.ts";
-import type { CompactionEntry, Entry, EntryProjector } from "./types.ts";
+import type { Entry, EntryProjector } from "./types.ts";
 
 export interface SessionContextBuildOptions {
 	entryProjectors?: Readonly<Record<string, EntryProjector>>;
 }
 
 export function buildContextEntries(pathEntries: readonly Entry[]): Entry[] {
-	let compaction: CompactionEntry | undefined;
-	let compactionIndex = -1;
-	for (let index = pathEntries.length - 1; index >= 0; index--) {
-		const entry = pathEntries[index];
-		if (entry?.type === "compaction") {
-			compaction = entry;
-			compactionIndex = index;
-			break;
-		}
-	}
-	return compaction === undefined ? [...pathEntries] : [compaction, ...pathEntries.slice(compactionIndex + 1)];
+	return [...pathEntries];
 }
 
 function isContextMessage(message: AgentMessage): boolean {
@@ -32,13 +21,6 @@ export function sessionEntryToContextMessages(entry: Entry): AgentMessage[] {
 	switch (entry.type) {
 		case "message":
 			return isContextMessage(entry.message) ? [entry.message] : [];
-		case "compaction":
-			return [
-				createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp),
-				...entry.retainedTail.filter(isContextMessage),
-			];
-		case "branch_summary":
-			return entry.summary ? [createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp)] : [];
 		case "custom":
 			return [];
 	}

@@ -1,12 +1,12 @@
-import type { AuthInfoLink, OAuthDeviceCodeInfo } from "@earendil-works/pi-ai";
+import type { AuthInfoLink } from "@earendil-works/pi-ai";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
-import { openBrowser } from "../../../utils/open-browser.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint } from "./keybinding-hints.ts";
 
 /**
- * Login dialog component - replaces editor during OAuth login flow
+ * Login dialog component - replaces editor during the API-key login flow.
+ * Collects a secret API key (or provider-env selections) via prompt steps.
  */
 export class LoginDialogComponent extends Container implements Focusable {
 	private contentContainer: Container;
@@ -91,65 +91,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	}
 
 	/**
-	 * Called by onAuth callback - show URL and optional instructions
-	 */
-	showAuth(url: string, instructions?: string): void {
-		this.contentContainer.clear();
-		this.contentContainer.addChild(new Spacer(1));
-		const linkedUrl = `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
-		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
-
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
-		const hyperlink = `\x1b]8;;${url}\x07${clickHint}\x1b]8;;\x07`;
-		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
-
-		if (instructions) {
-			this.contentContainer.addChild(new Spacer(1));
-			this.contentContainer.addChild(new Text(theme.fg("warning", instructions), 1, 0));
-		}
-
-		openBrowser(url);
-		this.tui.requestRender();
-	}
-
-	/**
-	 * Called by onDeviceCode callback - show URL and user code.
-	 */
-	showDeviceCode(info: OAuthDeviceCodeInfo): void {
-		this.contentContainer.clear();
-		this.contentContainer.addChild(new Spacer(1));
-		const linkedUrl = `\x1b]8;;${info.verificationUri}\x07${info.verificationUri}\x1b]8;;\x07`;
-		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
-
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
-		const hyperlink = `\x1b]8;;${info.verificationUri}\x07${clickHint}\x1b]8;;\x07`;
-		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
-		this.contentContainer.addChild(new Spacer(1));
-		this.contentContainer.addChild(new Text(theme.fg("warning", `Enter code: ${info.userCode}`), 1, 0));
-
-		this.tui.requestRender();
-	}
-
-	/**
-	 * Show input for manual code/URL entry (for callback server providers)
-	 */
-	showManualInput(prompt: string): Promise<string> {
-		this.input.setValue("");
-		this.contentContainer.addChild(new Spacer(1));
-		this.contentContainer.addChild(new Text(theme.fg("dim", prompt), 1, 0));
-		this.contentContainer.addChild(this.input);
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
-		this.tui.requestRender();
-
-		return new Promise((resolve, reject) => {
-			this.inputResolver = resolve;
-			this.inputRejecter = reject;
-		});
-	}
-
-	/**
-	 * Called by onPrompt callback - show prompt and wait for input
-	 * Note: Does NOT clear content, appends to existing (preserves URL from showAuth)
+	 * Show a prompt and wait for input.
 	 */
 	showPrompt(message: string, placeholder?: string): Promise<string> {
 		this.contentContainer.addChild(new Spacer(1));
@@ -201,19 +143,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.tui.requestRender();
 	}
 
-	/**
-	 * Show waiting message (for polling flows like GitHub Copilot)
-	 */
-	showWaiting(message: string): void {
-		this.contentContainer.addChild(new Spacer(1));
-		this.contentContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
-		this.tui.requestRender();
-	}
-
-	/**
-	 * Called by onProgress callback
-	 */
+	/** Show a waiting/progress message. */
 	showProgress(message: string): void {
 		this.contentContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
 		this.tui.requestRender();

@@ -2,7 +2,6 @@ import type { ImageContent, TextContent, Usage } from "@earendil-works/pi-ai";
 import { uuidv7 } from "@earendil-works/pi-ai/utils/uuid";
 import type { AgentMessage, ThinkingLevel } from "../../../types.ts";
 import type { Context } from "../../context.ts";
-import { createBranchSummaryMessage, createCompactionSummaryMessage } from "../../messages.ts";
 import type { FileSystem } from "../../types.ts";
 import { addUsage, emptyUsage } from "../../utils/usage.ts";
 import type { CommittedEntryWrite, CommittedValueSetWrite, CommittedWrite } from "../commit.ts";
@@ -265,12 +264,12 @@ function requireRetainedId(resolver: RetainedIdResolver, legacyId: string): stri
 	return importedId;
 }
 
-function resolveBranchSummaryFromId(resolver: RetainedIdResolver, legacyFromId: string): string | null {
+function _resolveBranchSummaryFromId(resolver: RetainedIdResolver, legacyFromId: string): string | null {
 	// Legacy branchWithSummary() encoded a root source as the "root" sentinel instead of null.
 	return legacyFromId === "root" ? null : resolver.resolve(legacyFromId);
 }
 
-function projectContextMessages(entry: LegacyV3Entry, resolver: RetainedIdResolver): AgentMessage[] {
+function projectContextMessages(entry: LegacyV3Entry, _resolver: RetainedIdResolver): AgentMessage[] {
 	switch (entry.type) {
 		case "message":
 			return [entry.message];
@@ -279,15 +278,23 @@ function projectContextMessages(entry: LegacyV3Entry, resolver: RetainedIdResolv
 		case "branch_summary":
 			return entry.summary
 				? [
-						createBranchSummaryMessage(
-							entry.summary,
-							resolveBranchSummaryFromId(resolver, entry.fromId),
-							entry.timestamp,
-						),
+						{
+							role: "user" as const,
+							content: [{ type: "text" as const, text: entry.summary }],
+							timestamp: new Date(entry.timestamp).getTime(),
+						},
 					]
 				: [];
 		case "compaction":
-			return [createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp)];
+			return entry.summary
+				? [
+						{
+							role: "user" as const,
+							content: [{ type: "text" as const, text: entry.summary }],
+							timestamp: new Date(entry.timestamp).getTime(),
+						},
+					]
+				: [];
 		case "custom":
 		case "model_change":
 		case "thinking_level_change":
@@ -298,7 +305,7 @@ function projectContextMessages(entry: LegacyV3Entry, resolver: RetainedIdResolv
 	}
 }
 
-function materializeRetainedTail(
+function _materializeRetainedTail(
 	compaction: LegacyV3CompactionEntry,
 	entriesById: ReadonlyMap<string, LegacyV3Entry>,
 	resolver: RetainedIdResolver,
@@ -325,7 +332,7 @@ function materializeRetainedTail(
 function normalizeRetainedEntry(
 	entry: RetainedLegacyV3Entry,
 	seq: number,
-	entriesById: ReadonlyMap<string, LegacyV3Entry>,
+	_entriesById: ReadonlyMap<string, LegacyV3Entry>,
 	resolver: RetainedIdResolver,
 ): CommittedEntryWrite {
 	const committedBase = {
@@ -345,27 +352,15 @@ function normalizeRetainedEntry(
 			message: importedCustomMessage(entry),
 		};
 	}
-	if (entry.type === "branch_summary") {
+	if (entry.type === "branch_summary" || entry.type === "compaction") {
 		return {
 			...committedBase,
-			type: "branch_summary",
-			fromId: resolveBranchSummaryFromId(resolver, entry.fromId),
-			summary: entry.summary,
-			details: entry.details,
-			usage: entry.usage,
-			fromHook: entry.fromHook ?? false,
-		};
-	}
-	if (entry.type === "compaction") {
-		return {
-			...committedBase,
-			type: "compaction",
-			summary: entry.summary,
-			retainedTail: materializeRetainedTail(entry, entriesById, resolver),
-			tokensBefore: entry.tokensBefore,
-			details: entry.details,
-			usage: entry.usage,
-			fromHook: entry.fromHook ?? false,
+			type: "message",
+			message: {
+				role: "user",
+				content: [{ type: "text", text: entry.summary }],
+				timestamp: new Date(entry.timestamp).getTime(),
+			},
 		};
 	}
 	return {

@@ -4,7 +4,6 @@ import { BACKGROUND_CONTEXT } from "../../../context.ts";
 import { insertEntry, insertUsage } from "../../commit.ts";
 import type {
 	CommitResult,
-	CompactionEntry,
 	CustomEntry,
 	Entry,
 	EntryStructure,
@@ -103,15 +102,13 @@ function customEntry(
 	return { id, parentId, type: "custom", customType, data };
 }
 
-function compactionEntry(id: string, parentId: string | null): NewEntry<CompactionEntry> {
+function compactionEntry(id: string, parentId: string | null): NewEntry<CustomEntry> {
 	return {
 		id,
 		parentId,
-		type: "compaction",
-		summary: `summary:${id}`,
-		retainedTail: [],
-		tokensBefore: 10,
-		fromHook: false,
+		type: "custom",
+		customType: "compaction",
+		data: { id },
 	};
 }
 
@@ -660,7 +657,7 @@ export function createStorageConformance(factory: () => Promise<StorageFixture>)
 				deepStrictEqual(
 					ids(
 						await storage.scanBranch(
-							{ start: "leaf", stopAtType: "compaction", type: "message" },
+							{ start: "leaf", stopAtType: "custom", type: "message" },
 							BACKGROUND_CONTEXT,
 						),
 					),
@@ -767,7 +764,7 @@ export function createStorageConformance(factory: () => Promise<StorageFixture>)
 				deepStrictEqual(
 					ids(
 						await storage.scanBranchStructure(
-							{ start: "leaf", stopAtType: "compaction", type: "message" },
+							{ start: "leaf", stopAtType: "custom", type: "message" },
 							BACKGROUND_CONTEXT,
 						),
 					),

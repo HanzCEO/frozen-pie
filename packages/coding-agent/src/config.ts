@@ -1,6 +1,6 @@
 import { accessSync, constants, existsSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join, resolve, sep, win32 } from "path";
+import { basename, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { spawnProcessSync } from "./utils/child-process.ts";
 import { normalizePath } from "./utils/paths.ts";
@@ -100,7 +100,7 @@ export function detectInstallMethod(): InstallMethod {
 
 function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
 	const packageDir = getPackageDir();
-	const path = process.platform === "win32" || packageDir.includes("\\") ? win32 : { basename, dirname };
+	const path = { basename, dirname };
 	const parent = path.dirname(packageDir);
 	let root: string | undefined;
 	if (path.basename(parent).startsWith("@") && path.basename(path.dirname(parent)) === "node_modules") {
@@ -265,9 +265,6 @@ function normalizeExistingPathForComparison(path: string, resolveSymlinks: boole
 		} catch {
 			return undefined;
 		}
-	}
-	if (process.platform === "win32") {
-		normalizedPath = normalizedPath.toLowerCase();
 	}
 	return normalizedPath;
 }

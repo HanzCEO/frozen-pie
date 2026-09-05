@@ -8,7 +8,6 @@ import type {
 	AuthInteraction,
 	AuthOperationOptions,
 	AuthResult,
-	AuthType,
 	Credential,
 	CredentialStore,
 	ProviderAuth,
@@ -44,7 +43,7 @@ export interface ModelsPublication {
 }
 
 export interface RefreshModelsContext {
-	/** Effective configured credential. OAuth credentials are refreshed before network access. */
+	/** Effective configured credential. */
 	credential?: Credential;
 	/** Immutable provider-scoped catalog snapshot captured before this refresh phase. */
 	stored?: Readonly<ModelsStoreEntry>;
@@ -102,7 +101,7 @@ export interface Provider<TApi extends Api = Api> {
 	readonly headers?: ProviderHeaders;
 
 	/**
-	 * Required: at least one of `apiKey`/`oauth`. Every provider has auth
+	 * Required: `apiKey` auth. Every provider has auth
 	 * semantics — even providers with only ambient credentials (env vars, AWS
 	 * profiles, ADC files) and keyless local servers provide `apiKey` auth
 	 * whose `resolve()` reports whether the provider is configured.
@@ -176,7 +175,7 @@ export interface Models {
 	 */
 	refresh(options?: ModelsRefreshOptions): Promise<ModelsRefreshResult>;
 
-	/** Check whether a provider has complete auth configuration without refreshing OAuth. */
+	/** Check whether a provider has complete auth configuration. */
 	checkAuth(providerId: string, options?: AuthOperationOptions): Promise<AuthCheck | undefined>;
 
 	/** Return models whose providers have complete auth configuration. */
@@ -186,16 +185,15 @@ export interface Models {
 	 * Resolve provider-scoped auth by provider id, or provider auth plus static
 	 * model headers when passed a model. Includes a source label for status UI.
 	 * Resolves `undefined` when the provider is unknown or unconfigured.
-	 * Rejects with `ModelsError`: code "oauth" when a token refresh fails (the
-	 * stored credential is preserved for retry; re-login fixes it), code "auth"
-	 * when api-key resolution or the credential store fails. Request paths
+	 * Rejects with `ModelsError`: code "auth" when api-key resolution or the
+	 * credential store fails. Request paths
 	 * surface rejections as stream errors.
 	 */
 	getAuth(providerId: string, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
 	getAuth(model: Model<Api>, overrides?: AuthResolutionOverrides): Promise<AuthResult | undefined>;
 
 	/** Run a provider-owned login flow and persist its returned credential. */
-	login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential>;
+	login(providerId: string, interaction: AuthInteraction): Promise<Credential>;
 
 	/** Remove the stored credential for a provider. */
 	logout(providerId: string, options?: AuthOperationOptions): Promise<void>;
@@ -455,22 +453,6 @@ class ModelsImpl implements MutableModels {
 		stored: Credential | undefined,
 		signal: AbortSignal,
 	): Promise<Credential | undefined> {
-		if (stored?.type === "oauth") {
-			const oauth = provider.auth.oauth;
-			if (!oauth) return undefined;
-			if (Date.now() < stored.expires) return stored;
-			if (signal.aborted) return undefined;
-			const post = await this.credentials.modify(
-				provider.id,
-				async (current) => {
-					if (current?.type !== "oauth" || Date.now() < current.expires) return undefined;
-					return oauth.refresh(current, signal);
-				},
-				{ signal },
-			);
-			return post?.type === "oauth" ? post : undefined;
-		}
-
 		const apiKey = provider.auth.apiKey;
 		if (!apiKey) return undefined;
 		const credential = stored?.type === "api_key" ? stored : undefined;
@@ -492,9 +474,6 @@ class ModelsImpl implements MutableModels {
 		credential: Credential | undefined,
 		signal: AbortSignal,
 	): Promise<AuthCheck | undefined> {
-		if (credential?.type === "oauth") {
-			return provider.auth.oauth ? { source: "OAuth", type: "oauth" } : undefined;
-		}
 		const apiKey = provider.auth.apiKey;
 		if (!apiKey) return undefined;
 		if (apiKey.check) {
@@ -567,14 +546,14 @@ class ModelsImpl implements MutableModels {
 		};
 	}
 
-	async login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential> {
+	async login(providerId: string, interaction: AuthInteraction): Promise<Credential> {
 		const signal = operationSignal(interaction.signal);
 		signal.throwIfAborted();
 		const provider = this.providers.get(providerId);
 		if (!provider) throw new ModelsError("provider", `Unknown provider: ${providerId}`);
-		const method = type === "oauth" ? provider.auth.oauth : provider.auth.apiKey;
+		const method = provider.auth.apiKey;
 		if (!method?.login) {
-			throw new ModelsError("auth", `${provider.name} does not support ${type} login`);
+			throw new ModelsError("auth", `${provider.name} does not support api_key login`);
 		}
 		const loginOperation: Promise<Credential> = method.login({ ...interaction, signal });
 		const credential = await raceWithAbortSignal(loginOperation, signal);

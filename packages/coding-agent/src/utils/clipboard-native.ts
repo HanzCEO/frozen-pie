@@ -28,6 +28,6 @@ export function loadClipboardNative(
 	return null;
 }
 
-const clipboard = !process.env.TERMUX_VERSION && hasDisplay ? loadClipboardNative() : null;
+const clipboard = hasDisplay ? loadClipboardNative() : null;
 
 export { clipboard };

@@ -48,10 +48,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	};
 
 	const registerSignalHandlers = (): void => {
-		const signals: NodeJS.Signals[] = ["SIGTERM"];
-		if (process.platform !== "win32") {
-			signals.push("SIGHUP");
-		}
+		const signals: NodeJS.Signals[] = ["SIGTERM", "SIGHUP"];
 
 		for (const signal of signals) {
 			const handler = () => {
@@ -84,9 +81,6 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 				},
 				navigateTree: async (targetId, navigateOptions) => {
 					const result = await session.navigateTree(targetId, {
-						summarize: navigateOptions?.summarize,
-						customInstructions: navigateOptions?.customInstructions,
-						replaceInstructions: navigateOptions?.replaceInstructions,
 						label: navigateOptions?.label,
 					});
 					return { cancelled: result.cancelled };

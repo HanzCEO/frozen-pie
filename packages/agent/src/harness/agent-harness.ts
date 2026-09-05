@@ -14,8 +14,6 @@ import type {
 	Usage,
 } from "@earendil-works/pi-ai";
 import type { AgentMessage, AgentToolResult, QueueMode, ThinkingLevel } from "../types.ts";
-import type { BranchPreparation, BranchSummaryResult } from "./compaction/branch-summarization.ts";
-import type { CompactionPreparation, CompactionSettings, CompactResult } from "./compaction/compaction.ts";
 import type { Context } from "./context.ts";
 import type {
 	Closed,
@@ -23,7 +21,6 @@ import type {
 	InvalidNavigation,
 	LaneBusy,
 	NoActiveOperation,
-	NothingToCompact,
 	NothingToResume,
 	OperationMismatch,
 	Result,
@@ -42,7 +39,6 @@ export {
 	LaneBusy,
 	NoActiveOperation,
 	NoActiveRun,
-	NothingToCompact,
 	NothingToResume,
 	OperationMismatch,
 	UnknownSkill,
@@ -85,10 +81,6 @@ export type RunResult = Result<
 	OperationResultRecord | SuspendedRun,
 	LaneBusy | InvalidMessage | UnknownSkill | UnknownTemplate | Closed
 >;
-export type CompactionResult = Result<
-	{ compaction: OperationResultRecord; run?: OperationResultRecord | SuspendedRun },
-	LaneBusy | NothingToCompact | Closed
->;
 export type NavigationResult = Result<
 	{ navigation: OperationResultRecord; run?: OperationResultRecord | SuspendedRun },
 	LaneBusy | InvalidNavigation | UnknownTarget | Closed
@@ -113,12 +105,11 @@ export type OperationRequest =
 	| { kind: "prompt"; operationId?: string; prompt: AgentMessage | AgentMessage[]; images?: never }
 	| { kind: "skill"; operationId?: string; name: string; additionalInstructions?: string }
 	| { kind: "prompt_template"; operationId?: string; name: string; args?: string[] }
-	| { kind: "compaction"; operationId?: string; customInstructions?: string }
 	| { kind: "navigation"; operationId?: string; targetId: string | null; options?: NavigateOptions };
 
 export interface OperationAdmission {
 	operationId: string;
-	kind: "run" | "compaction" | "navigation";
+	kind: "run" | "navigation";
 	startedAt: number;
 }
 
@@ -127,7 +118,6 @@ export type OperationAdmissionError =
 	| InvalidMessage
 	| UnknownSkill
 	| UnknownTemplate
-	| NothingToCompact
 	| InvalidNavigation
 	| UnknownTarget
 	| Closed;
@@ -148,7 +138,7 @@ export type OperationStatus = "running" | "open" | "aborting";
 
 export interface CurrentOperationInfo {
 	id: string;
-	kind: "run" | "compaction" | "navigation";
+	kind: "run" | "navigation";
 	startedAt: number;
 	status: OperationStatus;
 	capturedModel?: ModelIdentity;
@@ -211,7 +201,7 @@ export type LaneSnapshotTool =
 export interface OpenOperation {
 	lane: string;
 	operationId: string;
-	kind: "run" | "compaction" | "navigation";
+	kind: "run" | "navigation";
 	startedAt: number;
 	aborting?: true;
 }
@@ -234,7 +224,7 @@ export interface LaneSnapshot {
 	stats: SessionStats;
 	operation: null | {
 		id: string;
-		kind: "run" | "compaction" | "navigation";
+		kind: "run" | "navigation";
 		startedAt: number;
 		fromTipId: string | null;
 		status: OperationStatus;
@@ -349,20 +339,8 @@ export type HarnessEventPayload =
 					previous: AgentHarnessStreamOptions;
 			  }
 			| { property: "retryPolicy"; value: RetryPolicy; previous: RetryPolicy }
-			| { property: "compactionSettings"; value: CompactionSettings; previous: CompactionSettings }
 			| { property: "steeringMode"; value: QueueMode; previous: QueueMode }
 			| { property: "followUpMode"; value: QueueMode; previous: QueueMode }
-	  ))
-	| {
-			type: "compaction_start";
-			runId: string;
-			reason: "manual" | "threshold" | "overflow";
-			startedAt: number;
-	  }
-	| ({ type: "compaction_end"; runId: string; reason: "manual" | "threshold" | "overflow"; endedAt: number } & (
-			| { status: "completed"; entryId: string; error?: never }
-			| { status: "declined" | "aborted"; entryId?: never; error?: never }
-			| { status: "failed"; entryId?: never; error: OperationError }
 	  ))
 	| { type: "navigation_start"; runId: string; targetId: string | null; startedAt: number }
 	| ({ type: "navigation_end"; runId: string; fromTipId: string | null; tipId: string | null; endedAt: number } & (
@@ -433,7 +411,7 @@ export interface HookMap {
 		result: { messages?: AgentMessage[] } | undefined;
 	};
 	before_drive: {
-		event: { operation: "run" | "compaction" | "navigation" };
+		event: { operation: "run" | "navigation" };
 		result: VoidHookResult;
 	};
 	before_run_end: {
@@ -447,7 +425,7 @@ export interface HookMap {
 	before_request: {
 		event: {
 			model: Model<Api>;
-			step: "assistant" | "deferred" | "compaction" | "branch_summary";
+			step: "assistant" | "deferred" | "branch_summary";
 			attempt: number;
 			streamOptions: AgentHarnessStreamOptions;
 		};
@@ -485,18 +463,6 @@ export interface HookMap {
 			  }
 			| undefined;
 	};
-	before_compaction: {
-		event: {
-			reason: "manual" | "threshold" | "overflow";
-			preparation: CompactionPreparation;
-			customInstructions?: string;
-		};
-		result: { decline?: boolean; compaction?: CompactResult } | undefined;
-	};
-	before_navigation: {
-		event: { targetId: string; preparation: BranchPreparation; customInstructions?: string };
-		result: { decline?: boolean; summary?: BranchSummaryResult } | undefined;
-	};
 }
 
 export type HookName = keyof HookMap;
@@ -527,7 +493,6 @@ export interface AgentHarnessOptions<TContext extends object | undefined = objec
 	resources?: Resources;
 	streamOptions?: AgentHarnessStreamOptions;
 	retry?: RetryPolicy;
-	compaction?: CompactionSettings;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
 	toolExecution?: "sequential" | "parallel";
@@ -551,7 +516,6 @@ export interface AgentLane {
 	prompt(message: AgentMessage | AgentMessage[], context: Context): Promise<RunResult>;
 	skill(name: string, additionalInstructions: string | undefined, context: Context): Promise<RunResult>;
 	promptFromTemplate(name: string, args: string[] | undefined, context: Context): Promise<RunResult>;
-	compact(options: { customInstructions?: string } | undefined, context: Context): Promise<CompactionResult>;
 	navigateTree(
 		targetId: string | null,
 		options: NavigateOptions | undefined,
@@ -599,8 +563,6 @@ export interface AgentHarness<TContext extends object | undefined = object | und
 	setStreamOptions(options: AgentHarnessStreamOptions, context: Context): Promise<void>;
 	getRetryPolicy(context: Context): Promise<RetryPolicy>;
 	setRetryPolicy(policy: RetryPolicy, context: Context): Promise<void>;
-	getCompactionSettings(context: Context): Promise<CompactionSettings>;
-	setCompactionSettings(settings: CompactionSettings, context: Context): Promise<void>;
 	getSteeringMode(context: Context): Promise<QueueMode>;
 	setSteeringMode(mode: QueueMode, context: Context): Promise<void>;
 	getFollowUpMode(context: Context): Promise<QueueMode>;

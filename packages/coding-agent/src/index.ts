@@ -24,30 +24,6 @@ export {
 	type SessionStats,
 } from "./core/agent-session.ts";
 export { readStoredCredential } from "./core/auth-storage.ts";
-// Compaction
-export {
-	type BranchPreparation,
-	type BranchSummaryResult,
-	type CollectEntriesResult,
-	type CompactionResult,
-	type CutPointResult,
-	calculateContextTokens,
-	collectEntriesForBranchSummary,
-	compact,
-	DEFAULT_COMPACTION_SETTINGS,
-	estimateTokens,
-	type FileOperations,
-	findCutPoint,
-	findTurnStartIndex,
-	type GenerateBranchSummaryOptions,
-	generateBranchSummary,
-	generateSummary,
-	generateSummaryWithUsage,
-	getLastAssistantUsage,
-	prepareBranchEntries,
-	serializeConversation,
-	shouldCompact,
-} from "./core/compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
 // Extension system
 export type {
@@ -65,7 +41,6 @@ export type {
 	BeforeProviderRequestEvent,
 	BeforeProviderRequestEventResult,
 	BuildSystemPromptOptions,
-	CompactOptions,
 	ContextEvent,
 	ContextUsage,
 	CustomToolCallEvent,
@@ -107,7 +82,6 @@ export type {
 	MessageRenderOptions,
 	MessageStartEvent,
 	MessageUpdateEvent,
-	PowerShellToolCallEvent,
 	ProjectTrustContext,
 	ProjectTrustEvent,
 	ProjectTrustEventDecision,
@@ -119,11 +93,9 @@ export type {
 	RegisteredCommand,
 	RegisteredTool,
 	ResolvedCommand,
-	SessionBeforeCompactEvent,
 	SessionBeforeForkEvent,
 	SessionBeforeSwitchEvent,
 	SessionBeforeTreeEvent,
-	SessionCompactEvent,
 	SessionInfoChangedEvent,
 	SessionShutdownEvent,
 	SessionStartEvent,
@@ -163,7 +135,6 @@ export {
 	isFindToolResult,
 	isGrepToolResult,
 	isLsToolResult,
-	isPowerShellToolResult,
 	isReadToolResult,
 	isToolCallEventType,
 	isWriteToolResult,
@@ -190,15 +161,13 @@ export {
 	type ModelRuntimeAuthOverrides,
 } from "./core/model-runtime.ts";
 export type {
-	PackageManager,
 	PathMetadata,
-	ProgressCallback,
-	ProgressEvent,
 	ResolvedPaths,
 	ResolvedResource,
-} from "./core/package-manager.ts";
-export { DefaultPackageManager } from "./core/package-manager.ts";
-export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
+	ResourceCollision,
+	ResourceDiagnostic,
+	ResourceLoader,
+} from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
 // SDK for programmatic usage
 export {
@@ -223,22 +192,18 @@ export {
 	createFindTool,
 	createGrepTool,
 	createLsTool,
-	createPowerShellTool,
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
 	type PromptTemplate,
 } from "./core/sdk.ts";
 export {
-	type BranchSummaryEntry,
 	buildContextEntries,
 	buildSessionContext,
-	type CompactionEntry,
 	CURRENT_SESSION_VERSION,
 	type CustomEntry,
 	type CustomMessageEntry,
 	type FileEntry,
-	getLatestCompactionEntry,
 	type ModelChangeEntry,
 	migrateSessionEntries,
 	type NewSessionOptions,
@@ -256,7 +221,6 @@ export {
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.ts";
 export {
-	type CompactionSettings,
 	type DefaultProjectTrust,
 	type FullscreenExitOutput,
 	type ImageSettings,
@@ -291,9 +255,7 @@ export {
 	createFindToolDefinition,
 	createGrepToolDefinition,
 	createLocalBashOperations,
-	createLocalPowerShellOperations,
 	createLsToolDefinition,
-	createPowerShellToolDefinition,
 	createReadToolDefinition,
 	createWriteToolDefinition,
 	DEFAULT_MAX_BYTES,
@@ -315,12 +277,6 @@ export {
 	type LsToolDetails,
 	type LsToolInput,
 	type LsToolOptions,
-	type PowerShellOperations,
-	type PowerShellSpawnContext,
-	type PowerShellSpawnHook,
-	type PowerShellToolDetails,
-	type PowerShellToolInput,
-	type PowerShellToolOptions,
 	type ReadOperations,
 	type ReadToolDetails,
 	type ReadToolInput,
@@ -369,8 +325,6 @@ export {
 	AssistantMessageComponent,
 	BashExecutionComponent,
 	BorderedLoader,
-	BranchSummaryMessageComponent,
-	CompactionSummaryMessageComponent,
 	CustomEditor,
 	type CustomEditorOptions,
 	CustomMessageComponent,
@@ -383,7 +337,6 @@ export {
 	keyText,
 	LoginDialogComponent,
 	ModelSelectorComponent,
-	OAuthSelectorComponent,
 	type RenderDiffOptions,
 	rawKeyHint,
 	renderDiff,
@@ -421,4 +374,4 @@ export { convertToPng } from "./utils/image-convert.ts";
 export { formatDimensionNote, type ResizedImage, resizeImage } from "./utils/image-resize.ts";
 export { detectSupportedImageMimeTypeFromFile } from "./utils/mime.ts";
 // Shell utilities
-export { getPowerShellConfig, getShellConfig } from "./utils/shell.ts";
+export { getShellConfig } from "./utils/shell.ts";

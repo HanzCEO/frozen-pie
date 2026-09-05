@@ -20,16 +20,14 @@ import {
 	type OperationState,
 	operationScopeOf,
 	type SettledAssistantMessage,
-	type SummaryDecidingOperation,
 	type ToolCall,
 	type UsageRow,
 } from "../../session/types.ts";
-import { branchTip, deleteList, operationPreparation, pendingAssistantFrames, setValue } from "../../session/values.ts";
+import { branchTip, deleteList, pendingAssistantFrames, setValue } from "../../session/values.ts";
 import type { Lane } from "../lane.ts";
 import { openFrameProgress } from "../progress.ts";
 import type { Drive, ProcedureResult } from "../types.ts";
 import { retryDelay, retryNotBefore } from "./retry.ts";
-import { prepareOverflowCompaction } from "./structural.ts";
 import { operationCleanupWrites, operationResultRecord } from "./terminal.ts";
 
 export type AssistantResponseLifecycle = {
@@ -188,10 +186,6 @@ export async function publishResponse<TContext extends object | undefined>(
 	const overflow =
 		intent.at === "assistant.effect_pending" &&
 		(isContextOverflow(response, intent.contextWindow) || isRecoverableLength(response, intent.intendedOutputLimit));
-	const overflowPreparation =
-		overflow && !intent.generationContext.overflowRecoveryUsed
-			? await prepareOverflowCompaction(lane, drive, intent)
-			: undefined;
 	return lane.settleOperation<ResponseIntent, ProcedureResult>(
 		intent,
 		async (state, current, meta, reader) => {
@@ -225,26 +219,8 @@ export async function publishResponse<TContext extends object | undefined>(
 					response,
 					response.errorMessage ?? "Assistant request exceeded the context window",
 				);
-				if (current.generationContext.overflowRecoveryUsed || overflowPreparation === undefined) {
-					failure = providerError(source, committed);
-				} else {
-					const structural: SummaryDecidingOperation = {
-						...scope,
-						at: "summary.deciding",
-						task: {
-							taskId: overflowPreparation.taskId,
-							reason: "overflow",
-							boundary: {
-								kind: "resume_checkpoint",
-								resumeAfter: {
-									continuation: { kind: "need_assistant", overflowRecoveryUsed: true },
-									triggerEntryId: current.generationContext.triggerEntryId,
-								},
-							},
-						},
-					};
-					settled = structural;
-				}
+				failure = providerError(source, committed);
+				settled = undefined;
 			} else if (response.stopReason === "deferred") {
 				if (current.at === "assistant.effect_pending") {
 					if (deferredHandleIsValid(response, current)) {
@@ -344,14 +320,6 @@ export async function publishResponse<TContext extends object | undefined>(
 				...(record === undefined
 					? [deleteList(pendingAssistantFrames(drive.operationId, responseEntryId))]
 					: cleanup),
-				...(settled?.at === "summary.deciding" && overflowPreparation !== undefined
-					? [
-							setValue(
-								operationPreparation(drive.operationId, overflowPreparation.taskId),
-								overflowPreparation.preparation,
-							),
-						]
-					: []),
 			];
 			const materializeEntry = (commit: CommitResult): MessageEntry => ({
 				...responseEntry,
@@ -408,15 +376,6 @@ export async function publishResponse<TContext extends object | undefined>(
 							turnId,
 							message: committed,
 							toolResults: [],
-						});
-					}
-					if (settled?.at === "summary.deciding") {
-						batch.push({
-							type: "compaction_start",
-							lane: lane.name,
-							runId: drive.operationId,
-							reason: "overflow",
-							startedAt: commit.timestamp,
 						});
 					}
 				} else if (settled?.at !== "tools") {

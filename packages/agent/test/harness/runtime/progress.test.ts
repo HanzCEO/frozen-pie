@@ -1,7 +1,6 @@
 import { type AssistantMessageFrame, createModels } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WatchHandle } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT, type Context, withAbortSignal } from "../../../src/harness/context.ts";
 import { HookRegistry } from "../../../src/harness/hooks.ts";
 import { Lane } from "../../../src/harness/runtime/lane.ts";
@@ -48,7 +47,6 @@ const runtimeConfig: Config<undefined> = {
 	resources: {},
 	streamOptions: {},
 	retryPolicy: { enabled: true, maxRetries: 3, baseDelayMs: 1_000 },
-	compaction: DEFAULT_COMPACTION_SETTINGS,
 	steeringMode: "all",
 	followUpMode: "all",
 	toolExecution: "parallel",
@@ -66,7 +64,6 @@ function runScope() {
 	return {
 		control: { status: "running" as const },
 		settings: {
-			compaction: DEFAULT_COMPACTION_SETTINGS,
 			steeringMode: "all" as const,
 			followUpMode: "all" as const,
 			toolExecution: "parallel" as const,
@@ -86,7 +83,6 @@ function assistantEffectPending(responseEntryId: string): AssistantEffectPending
 			configuration,
 			streamOptions: {},
 			retryPolicy: { maxAttempts: 2, baseDelayMs: 1 },
-			overflowRecoveryUsed: false,
 		},
 		attempt: 1,
 		responseEntryId,

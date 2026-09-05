@@ -357,41 +357,6 @@ describe("TuiAltScreen", () => {
 		}
 	});
 
-	it("invokes the right-click paste handler only on Windows outside VS Code", () => {
-		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
-		const termProgram = process.env.TERM_PROGRAM;
-		assert.ok(platformDescriptor);
-		const terminal = new VirtualTerminal();
-		let pasteCount = 0;
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
-			onRightClickPaste: () => {
-				pasteCount += 1;
-			},
-		});
-		try {
-			Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
-			delete process.env.TERM_PROGRAM;
-			tui.start();
-			terminal.sendInput("\x1b[<2;1;1M");
-			terminal.sendInput("\x1b[<2;1;1m");
-			assert.strictEqual(pasteCount, 1);
-
-			process.env.TERM_PROGRAM = "vscode";
-			terminal.sendInput("\x1b[<2;1;1M");
-			assert.strictEqual(pasteCount, 1);
-
-			Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
-			delete process.env.TERM_PROGRAM;
-			terminal.sendInput("\x1b[<2;1;1M");
-			assert.strictEqual(pasteCount, 1);
-		} finally {
-			tui.stop();
-			Object.defineProperty(process, "platform", platformDescriptor);
-			if (termProgram === undefined) delete process.env.TERM_PROGRAM;
-			else process.env.TERM_PROGRAM = termProgram;
-		}
-	});
-
 	it("reveals an auto scrollbar when the pointer enters its hidden track", async () => {
 		const terminal = new RecordingTerminal(10, 5);
 		const tui = new TuiAltScreen(terminal);

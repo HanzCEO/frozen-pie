@@ -106,20 +106,8 @@ export async function copyToClipboard(text: string): Promise<void> {
 			if (p === "darwin") {
 				execSync("pbcopy", options);
 				copied = true;
-			} else if (p === "win32") {
-				execSync("clip", options);
-				copied = true;
 			} else {
-				// Linux. Try Termux, Wayland, or X11 clipboard tools.
-				if (process.env.TERMUX_VERSION) {
-					try {
-						execSync("termux-clipboard-set", options);
-						copied = true;
-					} catch {
-						// Fall back to Wayland or X11 tools.
-					}
-				}
-
+				// Linux. Try Wayland or X11 clipboard tools.
 				if (!copied) {
 					const hasWaylandDisplay = Boolean(process.env.WAYLAND_DISPLAY);
 					const hasX11Display = Boolean(process.env.DISPLAY);

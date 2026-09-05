@@ -1,12 +1,4 @@
-import type {
-	BranchSummaryEntry,
-	CompactionEntry,
-	CustomEntry,
-	Entry,
-	EntryScan,
-	EntryStructure,
-	MessageEntry,
-} from "@earendil-works/pi-agent-core";
+import type { CustomEntry, Entry, EntryScan, EntryStructure, MessageEntry } from "@earendil-works/pi-agent-core";
 import { joinSqlFragments, type SqlQuery, sql } from "../sql.ts";
 import type { SqliteDatabase, SqliteStatement } from "../types.ts";
 
@@ -31,27 +23,6 @@ function entryPayload(entry: Entry): StoredEntryPayload<Entry> {
 			const payload: StoredEntryPayload<MessageEntry> = {
 				message: entry.message,
 				...(entry.terminate === undefined ? {} : { terminate: entry.terminate }),
-			};
-			return payload;
-		}
-		case "compaction": {
-			const payload: StoredEntryPayload<CompactionEntry> = {
-				summary: entry.summary,
-				retainedTail: entry.retainedTail,
-				tokensBefore: entry.tokensBefore,
-				...(entry.details === undefined ? {} : { details: entry.details }),
-				...(entry.usage === undefined ? {} : { usage: entry.usage }),
-				fromHook: entry.fromHook,
-			};
-			return payload;
-		}
-		case "branch_summary": {
-			const payload: StoredEntryPayload<BranchSummaryEntry> = {
-				fromId: entry.fromId,
-				summary: entry.summary,
-				...(entry.details === undefined ? {} : { details: entry.details }),
-				...(entry.usage === undefined ? {} : { usage: entry.usage }),
-				fromHook: entry.fromHook,
 			};
 			return payload;
 		}
@@ -110,12 +81,9 @@ export function decodeEntryRow(row: EntryRow): Entry {
 	switch (row.type) {
 		case "message":
 			return { ...base, type: "message", ...parsePayload<MessageEntry>(row) };
-		case "compaction":
-			return { ...base, type: "compaction", ...parsePayload<CompactionEntry>(row) };
-		case "branch_summary":
-			return { ...base, type: "branch_summary", ...parsePayload<BranchSummaryEntry>(row) };
-		case "custom":
-			if (row.custom_type === null) throw new Error(`Custom entry ${row.id} is missing custom_type`);
+		default:
+			if (row.custom_type === null)
+				return { ...base, type: "custom", customType: row.type, ...parsePayload<CustomEntry>(row) };
 			return { ...base, type: "custom", customType: row.custom_type, ...parsePayload<CustomEntry>(row) };
 	}
 }

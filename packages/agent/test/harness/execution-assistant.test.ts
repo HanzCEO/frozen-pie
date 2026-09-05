@@ -9,7 +9,6 @@ import {
 	type SimpleStreamOptions,
 	type UserMessage,
 } from "@earendil-works/pi-ai";
-import { NOOP_TELEMETRY_CONTEXT } from "@earendil-works/pi-telemetry";
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "../../src/harness/context.ts";
 import { type AssistantResponseMetadata, streamHarnessAssistant } from "../../src/harness/execution/assistant.ts";
@@ -182,7 +181,6 @@ describe("streamHarnessAssistant", () => {
 			deferred: { window: "1h" },
 			reasoning: "high",
 			signal: controller.signal,
-			telemetryContext: NOOP_TELEMETRY_CONTEXT,
 		});
 		expect(responseMetadata).toEqual({ status: 201, headers: { "request-id": "r1" } });
 		expect(starts).toHaveLength(1);

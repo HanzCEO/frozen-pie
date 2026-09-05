@@ -9,9 +9,6 @@ import type {
 	NormalizedRetryPolicy,
 	OperationScope,
 	SessionReader,
-	SummaryDecidingOperation,
-	SummaryEffectPendingOperation,
-	SummaryReadyOperation,
 	Write,
 } from "../../session/types.ts";
 import { branchTip, deleteValue, pendingEntry, setValue } from "../../session/values.ts";
@@ -34,11 +31,7 @@ export interface BoundaryPlacement {
 	queues?: LaneQueuedItem[];
 }
 
-type FinishBoundaryOperation =
-	| CheckpointOperation
-	| SummaryDecidingOperation
-	| SummaryReadyOperation
-	| SummaryEffectPendingOperation;
+type FinishBoundaryOperation = CheckpointOperation;
 
 export function normalizedRetryPolicy<TContext extends object | undefined>(
 	lane: Lane<TContext>,
@@ -54,7 +47,6 @@ export function assistantReadyAtBoundary<TContext extends object | undefined>(
 	state: LaneState,
 	scope: OperationScope,
 	triggerEntryId: string,
-	overflowRecoveryUsed: boolean,
 ): AssistantReadyOperation {
 	const config = lane.readConfig();
 	return {
@@ -66,7 +58,6 @@ export function assistantReadyAtBoundary<TContext extends object | undefined>(
 			configuration: state.configuration,
 			streamOptions: config.streamOptions,
 			retryPolicy: normalizedRetryPolicy(lane),
-			overflowRecoveryUsed,
 		},
 		nextAttempt: 1,
 	};
@@ -189,7 +180,7 @@ export async function finishRunBoundary<TContext extends object | undefined, TSt
 				return {
 					kind: "commit",
 					writes: placement.writes,
-					operationState: assistantReadyAtBoundary(lane, state, current, placement.triggerEntryId, false),
+					operationState: assistantReadyAtBoundary(lane, state, current, placement.triggerEntryId),
 					lane: { tipId: placement.tipId, inbox: placement.inbox },
 					materialize: () => ({ kind: "continue" }) as const,
 					events: (commit) => [
@@ -212,7 +203,7 @@ export async function finishRunBoundary<TContext extends object | undefined, TSt
 				return {
 					kind: "commit",
 					writes: [...placement.writes, insertEntry(entry), setValue(branchTip(lane.name), followUp.id)],
-					operationState: assistantReadyAtBoundary(lane, state, current, followUp.id, false),
+					operationState: assistantReadyAtBoundary(lane, state, current, followUp.id),
 					lane: { tipId: followUp.id, inbox: placement.inbox },
 					materialize: () => ({ kind: "continue" }) as const,
 					events: (commit) => [

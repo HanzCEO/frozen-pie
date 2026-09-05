@@ -1,7 +1,6 @@
 import type { HookHandler, HookInvocation, HookMap, HookName, Hooks } from "./agent-harness.ts";
 import { type Context, withAbortSignal } from "./context.ts";
 import type { Gate } from "./execution/effect-gate.ts";
-import { startHarnessSpan } from "./telemetry.ts";
 import type { AgentHarnessStreamOptions, AgentHarnessStreamOptionsPatch } from "./types.ts";
 
 interface HookRegistration {
@@ -118,10 +117,6 @@ export class HookRegistry implements Hooks {
 				return this.beforeTool(event as HookInvocation<"before_tool">, context);
 			case "after_tool":
 				return this.afterTool(event as HookInvocation<"after_tool">, context);
-			case "before_compaction":
-				return this.firstStructural(name, event as HookInvocation<"before_compaction">, "compaction", context);
-			case "before_navigation":
-				return this.firstStructural(name, event as HookInvocation<"before_navigation">, "summary", context);
 		}
 	}
 
@@ -334,72 +329,13 @@ export class HookRegistry implements Hooks {
 		return Object.keys(aggregate).length === 0 ? undefined : aggregate;
 	}
 
-	private async firstStructural(
-		name: "before_compaction" | "before_navigation",
-		event: HookInvocation<"before_compaction"> | HookInvocation<"before_navigation">,
-		resultField: "compaction" | "summary",
-		context: Context,
-	): Promise<unknown> {
-		for (const registration of this.registrationsFor(name)) {
-			try {
-				const value = await registration.handler(event, context);
-				if (value === undefined || value === null || typeof value !== "object") continue;
-				const result = value as Record<string, unknown>;
-				if (result.decline === true && result[resultField] !== undefined) {
-					await this.reportError(
-						new Error(`${name} hook cannot return both decline and ${resultField}`),
-						name,
-						event.lane,
-						context,
-					);
-					continue;
-				}
-				if (result.decline === true || result[resultField] !== undefined) return value;
-			} catch (error) {
-				await this.reportError(
-					error instanceof Error ? error : new Error(String(error)),
-					name,
-					event.lane,
-					context,
-				);
-			}
-		}
-		return undefined;
-	}
-
 	private invokeToolRegistration(
-		name: "before_tool" | "after_tool",
+		_name: "before_tool" | "after_tool",
 		registration: HookRegistration,
 		event: HookInvocation<"before_tool"> | HookInvocation<"after_tool">,
 		context: Context,
 	): Promise<unknown> {
-		return startHarnessSpan(
-			"pi.harness.hook",
-			{
-				"pi.lane.name": event.lane,
-				"pi.operation.id": event.runId,
-				"pi.hook.name": name,
-				...(registration.id === undefined ? {} : { "pi.hook.registration_id": registration.id }),
-			},
-			async (span, spanContext) => {
-				try {
-					const result = await registration.handler(event, spanContext);
-					const blocked =
-						name === "before_tool" &&
-						result !== null &&
-						typeof result === "object" &&
-						"block" in result &&
-						result.block !== undefined;
-					span.setAttributes({ "pi.hook.outcome": blocked ? "blocked" : "completed" });
-					return result;
-				} catch (error) {
-					span.setAttributes({ "pi.hook.outcome": "failed" });
-					span.setStatus({ status: "error" });
-					throw error;
-				}
-			},
-			context,
-		);
+		return registration.handler(event, context) as Promise<unknown>;
 	}
 
 	private registrationsFor(name: HookName): HookRegistration[] {

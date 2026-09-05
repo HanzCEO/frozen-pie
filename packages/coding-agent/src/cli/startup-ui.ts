@@ -7,10 +7,8 @@ import {
 } from "@earendil-works/pi-tui";
 import { existsSync } from "fs";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.ts";
-import { areExperimentalFeaturesEnabled } from "../core/experimental.ts";
 import { KeybindingsManager } from "../core/keybindings.ts";
-import { DefaultPackageManager, type ResolvedResource } from "../core/package-manager.ts";
-import { SettingsManager } from "../core/settings-manager.ts";
+import type { SettingsManager } from "../core/settings-manager.ts";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.ts";
 import {
@@ -47,7 +45,7 @@ function isOfficialDistribution({ packageName, appName, configDirName }: Distrib
 	);
 }
 
-function loadThemes(resources: ResolvedResource[]): Theme[] {
+function loadThemes(resources: Array<{ path: string; enabled?: boolean }>): Theme[] {
 	const themes: Theme[] = [];
 	const seen = new Set<string>();
 	for (const resource of resources) {
@@ -68,16 +66,16 @@ function loadThemes(resources: ResolvedResource[]): Theme[] {
 }
 
 async function loadStartupThemes(settingsManager: SettingsManager): Promise<Theme[]> {
-	const globalSettingsManager = SettingsManager.inMemory(settingsManager.getGlobalSettings(), {
-		projectTrusted: false,
-	});
-	const packageManager = new DefaultPackageManager({
-		cwd: process.cwd(),
-		agentDir: getAgentDir(),
-		settingsManager: globalSettingsManager,
-	});
-	const resolvedPaths = await packageManager.resolve(async () => "skip");
-	return loadThemes(resolvedPaths.themes);
+	// Load themes from configured theme paths only (no npm/git package resolution)
+	const globalThemes = settingsManager.getGlobalSettings().themes ?? [];
+	const projectThemes = settingsManager.getProjectSettings().themes ?? [];
+	return loadThemes(
+		[...globalThemes, ...projectThemes].map((theme) => ({
+			path: theme,
+			enabled: true,
+			metadata: { source: "auto", scope: "project", origin: "top-level" },
+		})),
+	);
 }
 
 export async function createStartupTui(settingsManager: SettingsManager): Promise<TUI> {
@@ -127,9 +125,6 @@ export function shouldRunFirstTimeSetup(settingsPath: string = getSettingsPath()
 			configDirName: CONFIG_DIR_NAME,
 		})
 	) {
-		return false;
-	}
-	if (!areExperimentalFeaturesEnabled()) {
 		return false;
 	}
 	if (process.env[ENV_AGENT_DIR]) {

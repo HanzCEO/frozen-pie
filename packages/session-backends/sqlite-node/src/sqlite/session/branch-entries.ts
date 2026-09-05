@@ -39,15 +39,6 @@ interface BranchTipRow {
 	branch_id: string;
 }
 
-interface CompactionBoundary {
-	branchId: string;
-	seq: number;
-}
-
-interface CompactionBoundaryRow {
-	entry_seq: number | null;
-}
-
 function readBranchMembership(db: SqliteDatabase, sessionId: string, entryId: string): BranchMembershipRow {
 	const row = sql`SELECT b.branch_id, b.entry_seq
 		FROM branch_entries b
@@ -110,25 +101,6 @@ function readBranchSegmentsNewestFirst(db: SqliteDatabase, sessionId: string, st
 	return segments;
 }
 
-function readNewestCompactionBoundary(
-	db: SqliteDatabase,
-	sessionId: string,
-	segmentsNewestFirst: readonly BranchSegment[],
-): CompactionBoundary | undefined {
-	for (const segment of segmentsNewestFirst) {
-		const row = sql`SELECT MAX(entry_seq) AS entry_seq
-			FROM branch_entries
-			WHERE session_id = ${sessionId}
-				AND branch_id = ${segment.branchId}
-				AND entry_seq > ${segment.lowerSeq}
-				AND entry_seq <= ${segment.upperSeq}
-				AND entry_type = ${"compaction"}`.get<CompactionBoundaryRow>(db);
-		if (row?.entry_seq !== null && row?.entry_seq !== undefined)
-			return { branchId: segment.branchId, seq: row.entry_seq };
-	}
-	return undefined;
-}
-
 function copyBranchEntriesAfterSeqThroughParent(
 	db: SqliteDatabase,
 	sessionId: string,
@@ -152,14 +124,11 @@ function copyBranchEntriesAfterSeqThroughParent(
 function createDivergentBranchForEntry(db: SqliteDatabase, sessionId: string, entry: Entry): void {
 	if (entry.parentId === null) throw new Error("Root entries do not create divergent branches");
 	const segmentsNewestFirst = readBranchSegmentsNewestFirst(db, sessionId, entry.parentId);
-	const compaction = readNewestCompactionBoundary(db, sessionId, segmentsNewestFirst);
 	const branchId = entry.id;
 	// A null base means this segment stores its own root-through-parent prefix.
 	sql`INSERT INTO branch_meta (session_id, branch_id, tip_entry_id, tip_seq, base_branch_id, base_seq)
-		VALUES (${sessionId}, ${branchId}, ${entry.id}, ${entry.seq}, ${compaction?.branchId ?? null}, ${compaction?.seq ?? null})`.run(
-		db,
-	);
-	copyBranchEntriesAfterSeqThroughParent(db, sessionId, branchId, segmentsNewestFirst, compaction?.seq ?? 0);
+		VALUES (${sessionId}, ${branchId}, ${entry.id}, ${entry.seq}, ${null}, ${null})`.run(db);
+	copyBranchEntriesAfterSeqThroughParent(db, sessionId, branchId, segmentsNewestFirst, 0);
 	insertBranchEntry(db, sessionId, branchId, entry);
 }
 

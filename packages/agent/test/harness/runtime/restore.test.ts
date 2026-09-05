@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT } from "../../../src/harness/context.ts";
 import { restoreLane, restoreSession } from "../../../src/harness/runtime/restore.ts";
 import { MemorySessionRepo, MemoryStorage } from "../../../src/harness/session/memory.ts";
@@ -9,7 +8,6 @@ import type {
 	OperationMeta,
 	OperationScope,
 	OperationState,
-	ResultBoundary,
 	Session,
 } from "../../../src/harness/session/types.ts";
 import * as storedValues from "../../../src/harness/session/values.ts";
@@ -48,7 +46,6 @@ function operationScope(): OperationScope {
 	return {
 		control: { status: "running" },
 		settings: {
-			compaction: DEFAULT_COMPACTION_SETTINGS,
 			steeringMode: "all",
 			followUpMode: "all",
 			toolExecution: "parallel",
@@ -61,24 +58,8 @@ function runState(triggerEntryId: string): CheckpointOperation {
 	return {
 		...operationScope(),
 		at: "checkpoint",
-		continuation: { kind: "need_assistant", overflowRecoveryUsed: false },
+		continuation: { kind: "need_assistant" },
 		triggerEntryId,
-	};
-}
-
-function summaryState(boundary: ResultBoundary): OperationState {
-	return {
-		...operationScope(),
-		at: "summary.deciding",
-		task: {
-			taskId: "task",
-			...(boundary.kind === "finish"
-				? { reason: "manual" as const }
-				: boundary.kind === "resume_checkpoint"
-					? { reason: "threshold" as const }
-					: {}),
-			boundary,
-		},
 	};
 }
 
@@ -198,18 +179,8 @@ describe("runtime lane restore", () => {
 	});
 
 	it("accepts exactly the family-neutral state reachability matrix", async () => {
-		const resume = { kind: "resume_checkpoint", resumeAfter: runState("trigger") } satisfies ResultBoundary;
-		const finish = { kind: "finish" } satisfies ResultBoundary;
-		const navigation = { kind: "commit_navigation", targetId: "target" } satisfies ResultBoundary;
 		const cases: { intent: OperationMeta["intent"]; state: OperationState; accepted: boolean }[] = [
 			{ intent: { kind: "run", promptEntryIds: [] }, state: runState("trigger"), accepted: true },
-			{ intent: { kind: "run", promptEntryIds: [] }, state: summaryState(resume), accepted: true },
-			{ intent: { kind: "run", promptEntryIds: [] }, state: summaryState(finish), accepted: false },
-			{ intent: { kind: "run", promptEntryIds: [] }, state: summaryState(navigation), accepted: false },
-			{ intent: { kind: "compaction" }, state: summaryState(finish), accepted: true },
-			{ intent: { kind: "compaction" }, state: summaryState(resume), accepted: false },
-			{ intent: { kind: "compaction" }, state: summaryState(navigation), accepted: false },
-			{ intent: { kind: "compaction" }, state: runState("trigger"), accepted: false },
 			{
 				intent: { kind: "navigation", targetId: null, summarize: false },
 				state: { ...operationScope(), at: "navigation.ready_to_commit", targetId: null },
@@ -218,41 +189,6 @@ describe("runtime lane restore", () => {
 			{
 				intent: { kind: "navigation", targetId: "target", summarize: false },
 				state: { ...operationScope(), at: "navigation.ready_to_commit", targetId: "different" },
-				accepted: false,
-			},
-			{
-				intent: { kind: "navigation", targetId: "target", summarize: false },
-				state: summaryState(navigation),
-				accepted: false,
-			},
-			{
-				intent: { kind: "navigation", targetId: "target", summarize: true },
-				state: summaryState(navigation),
-				accepted: true,
-			},
-			{
-				intent: { kind: "navigation", targetId: "different", summarize: true },
-				state: summaryState(navigation),
-				accepted: false,
-			},
-			{
-				intent: { kind: "navigation", targetId: "target", summarize: true },
-				state: { ...operationScope(), at: "navigation.ready_to_commit", targetId: "target" },
-				accepted: false,
-			},
-			{
-				intent: { kind: "navigation", targetId: "target", summarize: true },
-				state: summaryState(finish),
-				accepted: false,
-			},
-			{
-				intent: { kind: "navigation", targetId: "target", summarize: true },
-				state: summaryState(resume),
-				accepted: false,
-			},
-			{
-				intent: { kind: "navigation", targetId: "target", summarize: false },
-				state: runState("trigger"),
 				accepted: false,
 			},
 		];

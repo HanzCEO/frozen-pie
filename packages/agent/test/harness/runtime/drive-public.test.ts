@@ -143,75 +143,6 @@ describe("runtime public drive", () => {
 		]);
 	});
 
-	it.each(["steer", "followUp", "nextRun"] as const)(
-		"starts an ordinary continuation run from queued %s input",
-		async (kind) => {
-			const { lane, faux } = await createFixture();
-			await lane.appendMessage({ role: "user", content: "history", timestamp: 1 }, BACKGROUND_CONTEXT);
-			const summaryStarted = deferred();
-			const releaseSummary = deferred();
-			faux.setResponses([
-				async () => {
-					summaryStarted.resolve();
-					await releaseSummary.promise;
-					return fauxAssistantMessage("summary");
-				},
-				fauxAssistantMessage("continuation answer"),
-			]);
-			const compacting = lane.compact(undefined, BACKGROUND_CONTEXT);
-			await summaryStarted.promise;
-			const queued = await lane[kind]("continue", undefined, BACKGROUND_CONTEXT);
-			expect(queued.ok).toBe(true);
-			releaseSummary.resolve();
-
-			expect(await compacting).toMatchObject({
-				ok: true,
-				value: {
-					compaction: { kind: "compaction", status: "completed" },
-					run: { kind: "run", status: "completed" },
-				},
-			});
-			expect(faux.state.callCount).toBe(2);
-		},
-	);
-
-	it("lets a competing acceptance win the structural continuation window", async () => {
-		const { lane, harness, faux } = await createFixture();
-		await lane.appendMessage({ role: "user", content: "history", timestamp: 1 }, BACKGROUND_CONTEXT);
-		const summaryStarted = deferred();
-		const releaseSummary = deferred();
-		faux.setResponses([
-			async () => {
-				summaryStarted.resolve();
-				await releaseSummary.promise;
-				return fauxAssistantMessage("summary");
-			},
-			fauxAssistantMessage("competitor answer"),
-		]);
-		let competing: ReturnType<typeof lane.accept> | undefined;
-		harness.events.on("compaction_end", (event) => {
-			if (event.status === "completed") {
-				competing = lane.accept({ kind: "prompt", prompt: "competitor" }, BACKGROUND_CONTEXT);
-			}
-		});
-		const compacting = lane.compact(undefined, BACKGROUND_CONTEXT);
-		await summaryStarted.promise;
-		await lane.nextRun("queued", undefined, BACKGROUND_CONTEXT);
-		releaseSummary.resolve();
-
-		const compacted = await compacting;
-		expect(compacted).toMatchObject({ ok: true, value: { compaction: { status: "completed" } } });
-		if (!compacted.ok) throw compacted.error;
-		expect(compacted.value).not.toHaveProperty("run");
-		if (competing === undefined) throw new Error("Competing acceptance did not start");
-		const admission = await competing;
-		if (!admission.ok) throw admission.error;
-		expect(await lane.drive({ operationId: admission.value.operationId }, BACKGROUND_CONTEXT)).toMatchObject({
-			ok: true,
-			value: { kind: "settled", outcome: { status: "completed" } },
-		});
-	});
-
 	it("cancels queued input and reports consumed or missing ids", async () => {
 		const { lane, faux } = await createFixture();
 		const cancelled = await lane.nextRun("cancel", undefined, BACKGROUND_CONTEXT);
@@ -256,19 +187,7 @@ describe("runtime public drive", () => {
 		});
 	});
 
-	it("composes standalone compaction acceptance with drive", async () => {
-		const { lane, faux } = await createFixture();
-		await lane.appendMessage({ role: "user", content: "history", timestamp: 1 }, BACKGROUND_CONTEXT);
-		faux.setResponses([fauxAssistantMessage("summary")]);
-
-		expect(await lane.compact(undefined, BACKGROUND_CONTEXT)).toMatchObject({
-			ok: true,
-			value: { compaction: { kind: "compaction", status: "completed" } },
-		});
-		expect(faux.state.callCount).toBe(1);
-	});
-
-	it.each([false, true])("composes %s summarized navigation acceptance with drive", async (summarize) => {
+	it("composes navigation acceptance with drive", async () => {
 		const { lane, session, faux } = await createFixture();
 		const rootId = await lane.appendMessage({ role: "user", content: "root", timestamp: 1 }, BACKGROUND_CONTEXT);
 		await lane.appendMessage({ role: "user", content: "source", timestamp: 2 }, BACKGROUND_CONTEXT);
@@ -290,13 +209,12 @@ describe("runtime public drive", () => {
 				),
 			BACKGROUND_CONTEXT,
 		);
-		if (summarize) faux.setResponses([fauxAssistantMessage("branch summary")]);
 
-		expect(await lane.navigateTree("target", { summarize, label: "chosen" }, BACKGROUND_CONTEXT)).toMatchObject({
+		expect(await lane.navigateTree("target", { label: "chosen" }, BACKGROUND_CONTEXT)).toMatchObject({
 			ok: true,
 			value: { navigation: { kind: "navigation", status: "completed" } },
 		});
-		expect(faux.state.callCount).toBe(summarize ? 1 : 0);
+		expect(faux.state.callCount).toBe(0);
 		expect(await lane.getTipId(BACKGROUND_CONTEXT)).not.toBeNull();
 	});
 

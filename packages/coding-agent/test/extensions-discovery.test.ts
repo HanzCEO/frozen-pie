@@ -69,24 +69,6 @@ describe("extensions discovery", () => {
 		expect(result.extensions).toHaveLength(1);
 	});
 
-	it("keeps the type-only pi-ai OAuth compatibility barrel resolvable", async () => {
-		fs.writeFileSync(
-			path.join(extensionsDir, "oauth-import.ts"),
-			`
-				import * as oauth from "@earendil-works/pi-ai/oauth";
-				void oauth;
-				export default function(pi) {
-					pi.registerCommand("test", { handler: async () => {} });
-				}
-			`,
-		);
-
-		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-
-		expect(result.errors).toEqual([]);
-		expect(result.extensions).toHaveLength(1);
-	});
-
 	it("discovers direct .js files in extensions/", async () => {
 		fs.writeFileSync(path.join(extensionsDir, "foo.js"), extensionCode);
 
@@ -356,19 +338,6 @@ describe("extensions discovery", () => {
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(1);
 		expect(result.extensions[0].path).toContain("my-ext.ts");
-	});
-
-	it("resolves dependencies from extension's own node_modules", async () => {
-		// Load extension that has its own package.json and node_modules with 'ms' package
-		const extPath = path.resolve(__dirname, "../examples/extensions/with-deps");
-
-		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
-
-		expect(result.errors).toHaveLength(0);
-		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].path).toContain("with-deps");
-		// The extension registers a 'parse_duration' tool
-		expect(result.extensions[0].tools.has("parse_duration")).toBe(true);
 	});
 
 	it("registers message and entry renderers", async () => {

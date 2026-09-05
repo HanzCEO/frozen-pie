@@ -35,17 +35,6 @@ export function reduceLaneSnapshot(
 				runningTools: [],
 			};
 			return;
-		case "compaction_start":
-			if (snapshot.operation !== null) return;
-			snapshot.operation = {
-				id: event.runId,
-				kind: "compaction",
-				startedAt: event.startedAt,
-				fromTipId: snapshot.tipId,
-				status: "open",
-				runningTools: [],
-			};
-			return;
 		case "navigation_start":
 			snapshot.operation = {
 				id: event.runId,
@@ -156,8 +145,7 @@ export function reduceLaneSnapshot(
 					if (index !== -1) operation.runningTools.splice(index, 1);
 				}
 			}
-			if (event.entry.type === "compaction") snapshot.transcript.splice(0, snapshot.transcript.length, event.entry);
-			else snapshot.transcript.push(event.entry);
+			snapshot.transcript.push(event.entry);
 			snapshot.tipId = event.entry.id;
 			if (event.entry.type === "message") snapshot.stats.messageCount += 1;
 			return;
@@ -198,23 +186,6 @@ export function reduceLaneSnapshot(
 			snapshot.lastResult = record;
 			snapshot.operation = null;
 			snapshot.tipId = event.tipId;
-			return;
-		}
-		case "compaction_end": {
-			const operation = matchingOperation(snapshot, event.runId);
-			if (operation?.kind !== "compaction") return;
-			const record: OperationResultRecord = {
-				operationId: event.runId,
-				kind: "compaction",
-				status: event.status,
-				...(event.status === "failed" ? { error: event.error } : {}),
-				fromTipId: operation.fromTipId,
-				tipId: snapshot.tipId,
-				startedAt: operation.startedAt,
-				endedAt: event.endedAt,
-			};
-			snapshot.lastResult = record;
-			snapshot.operation = null;
 			return;
 		}
 		case "navigation_end":

@@ -97,7 +97,6 @@ describe("ExtensionRunner", () => {
 		hasPendingMessages: () => false,
 		shutdown: () => {},
 		getContextUsage: () => undefined,
-		compact: () => {},
 		getSystemPrompt: () => "",
 		getScopedModels: () => [],
 	};

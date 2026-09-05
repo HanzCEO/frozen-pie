@@ -1,7 +1,6 @@
 import type { RetryPolicy } from "@earendil-works/pi-ai";
 import type { QueueMode } from "../../types.ts";
 import type { AgentHarnessOptions, DriveOptions, DriveOutcome, HarnessEvent, Resources } from "../agent-harness.ts";
-import type { CompactionSettings } from "../compaction/compaction.ts";
 import { type Context, withoutAbortSignal } from "../context.ts";
 import { createGate, type Gate, type GateControl } from "../execution/effect-gate.ts";
 import type {
@@ -28,7 +27,6 @@ export interface Config<TContext extends object | undefined> {
 	readonly resources: Resources;
 	readonly streamOptions: AgentHarnessStreamOptions;
 	readonly retryPolicy: RetryPolicy;
-	readonly compaction: CompactionSettings;
 	readonly steeringMode: QueueMode;
 	readonly followUpMode: QueueMode;
 	readonly toolExecution: "sequential" | "parallel";

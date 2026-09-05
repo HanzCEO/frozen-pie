@@ -11,7 +11,6 @@ import type {
 	OperationScope,
 	OperationState,
 	Session,
-	SummaryDecidingOperation,
 	ToolsOperation,
 	Write,
 } from "../../../src/harness/session/types.ts";
@@ -28,7 +27,6 @@ function runScope(): OperationScope {
 	return {
 		control: { status: "running" },
 		settings: {
-			compaction: { enabled: true, reserveTokens: 1_000, keepRecentTokens: 2_000 },
 			steeringMode: "all",
 			followUpMode: "all",
 			toolExecution: "parallel",
@@ -39,11 +37,9 @@ function runScope(): OperationScope {
 
 function meta(operationId: string, state: OperationState): OperationMeta {
 	const intent: OperationMeta["intent"] =
-		state.at === "summary.deciding"
-			? { kind: "compaction" }
-			: state.at === "navigation.ready_to_commit"
-				? { kind: "navigation", targetId: state.targetId, summarize: false }
-				: { kind: "run", promptEntryIds: [] };
+		state.at === "navigation.ready_to_commit"
+			? { kind: "navigation", targetId: state.targetId, summarize: false }
+			: { kind: "run", promptEntryIds: [] };
 	return { operationId, lane: "main", sourceTipId: null, startedAt: 1, intent };
 }
 
@@ -77,7 +73,6 @@ async function seedLeftovers(session: Session, operationId: string, state: Opera
 		storedValues.setValue(storedValues.operationToolMemo(operationId, "invocation", "memo"), { value: true }),
 		storedValues.setValue(storedValues.operationPreparation(operationId, "task"), {
 			kind: "branch_summary",
-			messages: [],
 			fileOps: { read: [], written: [], edited: [] },
 			totalTokens: 0,
 		}),
@@ -107,7 +102,6 @@ describe("runtime terminal cleanup mechanics", () => {
 				configuration,
 				streamOptions: {},
 				retryPolicy: { maxAttempts: 2, baseDelayMs: 1 },
-				overflowRecoveryUsed: false,
 			},
 			attempt: 1,
 			responseEntryId,
@@ -209,24 +203,13 @@ describe("runtime terminal cleanup mechanics", () => {
 		expect(writes.map(address)).not.toContain("value:delete:pi.pending.entry:placed");
 	});
 
-	it.each([
-		[
-			"compaction",
-			{
-				...runScope(),
-				at: "summary.deciding",
-				task: { taskId: "task", reason: "manual", boundary: { kind: "finish" } },
-			} satisfies SummaryDecidingOperation,
-		],
-		[
-			"navigation",
-			{
-				...runScope(),
-				at: "navigation.ready_to_commit",
-				targetId: null,
-			} satisfies NavigationReadyToCommitOperation,
-		],
-	] as const)("defensively deletes leftover %s operation families", async (operationId, state) => {
+	it("defensively deletes leftover navigation operation families", async () => {
+		const operationId = "navigation";
+		const state: NavigationReadyToCommitOperation = {
+			...runScope(),
+			at: "navigation.ready_to_commit",
+			targetId: null,
+		};
 		const { session } = await createSession();
 		await seedLeftovers(session, operationId, state);
 

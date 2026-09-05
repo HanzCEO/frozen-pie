@@ -587,12 +587,6 @@ class TreeList implements Component {
 				}
 				break;
 			}
-			case "compaction":
-				parts.push("compaction");
-				break;
-			case "branch_summary":
-				parts.push("branch summary", entry.summary);
-				break;
 			case "session_info":
 				parts.push("title");
 				if (entry.name) parts.push(entry.name);
@@ -819,14 +813,6 @@ class TreeList implements Component {
 				result = theme.fg("customMessageLabel", `[${entry.customType}]: `) + normalize(content);
 				break;
 			}
-			case "compaction": {
-				const tokens = Math.round(entry.tokensBefore / 1000);
-				result = theme.fg("borderAccent", `[compaction: ${tokens}k tokens]`);
-				break;
-			}
-			case "branch_summary":
-				result = theme.fg("warning", `[branch summary]: `) + normalize(entry.summary);
-				break;
 			case "model_change":
 				result = theme.fg("dim", `[model: ${entry.modelId}]`);
 				break;
@@ -910,12 +896,6 @@ class TreeList implements Component {
 				break;
 			case "custom_message":
 				text = this.extractFullContent(entry.content);
-				break;
-			case "compaction":
-				text = entry.summary;
-				break;
-			case "branch_summary":
-				text = entry.summary;
 				break;
 		}
 

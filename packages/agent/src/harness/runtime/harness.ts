@@ -10,8 +10,7 @@ import type {
 	OpenOperation,
 	Resources,
 } from "../agent-harness.ts";
-import { type CompactionSettings, DEFAULT_COMPACTION_SETTINGS } from "../compaction/compaction.ts";
-import { DEFAULT_RETRY_POLICY, validateCompactionSettings, validateRetryPolicy, validateToolNames } from "../config.ts";
+import { DEFAULT_RETRY_POLICY, validateRetryPolicy, validateToolNames } from "../config.ts";
 import type { Context } from "../context.ts";
 import { HarnessEventBus } from "../events.ts";
 import { HookRegistry } from "../hooks.ts";
@@ -62,7 +61,6 @@ export class Harness<TContext extends object | undefined> implements AgentHarnes
 				resources: options.resources ?? {},
 				streamOptions: options.streamOptions ?? {},
 				retryPolicy: options.retry ?? DEFAULT_RETRY_POLICY,
-				compaction: options.compaction ?? DEFAULT_COMPACTION_SETTINGS,
 				steeringMode: options.steeringMode ?? "all",
 				followUpMode: options.followUpMode ?? "all",
 				toolExecution: options.toolExecution ?? "parallel",
@@ -262,20 +260,6 @@ export class Harness<TContext extends object | undefined> implements AgentHarnes
 		);
 	}
 
-	getCompactionSettings(context: Context): Promise<CompactionSettings> {
-		return this.getConfig("compaction", context);
-	}
-
-	setCompactionSettings(compaction: CompactionSettings, context: Context): Promise<void> {
-		validateCompactionSettings(compaction);
-		return this.setConfig(
-			"compaction",
-			compaction,
-			(previous, value) => ({ type: "config_update", property: "compactionSettings", previous, value }),
-			context,
-		);
-	}
-
 	getSteeringMode(context: Context): Promise<QueueMode> {
 		return this.getConfig("steeringMode", context);
 	}
@@ -379,7 +363,6 @@ export async function createAgentHarness<TContext extends object | undefined = o
 	const tools = options.tools ?? [];
 	validateToolNames(tools);
 	validateRetryPolicy(options.retry ?? DEFAULT_RETRY_POLICY);
-	validateCompactionSettings(options.compaction ?? DEFAULT_COMPACTION_SETTINGS);
 	const seed: LaneConfiguration = {
 		model: { provider: options.model.provider, modelId: options.model.id },
 		thinkingLevel: options.thinkingLevel ?? "off",

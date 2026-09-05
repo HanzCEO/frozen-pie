@@ -224,7 +224,7 @@ async function commitPlacement<TContext extends object | undefined>(
 					at: "checkpoint",
 					continuation: allTerminate
 						? { kind: "may_finish", includeFinalAssistant: false }
-						: { kind: "need_assistant", overflowRecoveryUsed: false },
+						: { kind: "need_assistant" },
 					triggerEntryId: parentId!,
 				};
 				nextRun = checkpoint;

@@ -9,11 +9,9 @@ import {
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, WatchHandle } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT } from "../../../src/harness/context.ts";
 import { HookRegistry } from "../../../src/harness/hooks.ts";
 import { reconcileOperation } from "../../../src/harness/runtime/drive/reconcile.ts";
-import { runStructuralDecision } from "../../../src/harness/runtime/drive/structural.ts";
 import { driveOperation } from "../../../src/harness/runtime/drive.ts";
 import { Lane } from "../../../src/harness/runtime/lane.ts";
 import { restoreLane } from "../../../src/harness/runtime/restore.ts";
@@ -74,7 +72,6 @@ function scope(control: Control = cancelledControl()): OperationScope {
 	return {
 		control,
 		settings: {
-			compaction: DEFAULT_COMPACTION_SETTINGS,
 			steeringMode: "all",
 			followUpMode: "all",
 			toolExecution: "parallel",
@@ -87,7 +84,7 @@ function user(content: string): AgentMessage {
 	return { role: "user", content, timestamp: 1 };
 }
 
-function summaryContext(configuration: LaneConfiguration): SummaryContext {
+function _summaryContext(configuration: LaneConfiguration): SummaryContext {
 	return {
 		resultEntryId: "summary-entry",
 		configuration,
@@ -135,7 +132,6 @@ async function createFixture(): Promise<Fixture> {
 		resources: {},
 		streamOptions: {},
 		retryPolicy: { enabled: true, maxRetries: 1, baseDelayMs: 10 },
-		compaction: DEFAULT_COMPACTION_SETTINGS,
 		steeringMode: "all",
 		followUpMode: "all",
 		toolExecution: "parallel",
@@ -243,21 +239,20 @@ function cases(fixture: Fixture): InstalledOperation[] {
 		configuration: fixture.configuration,
 		streamOptions: {},
 		retryPolicy: { maxAttempts: 2, baseDelayMs: 10 },
-		overflowRecoveryUsed: false,
 	};
-	const runTask: SummaryTask = {
+	const _runTask: SummaryTask = {
 		taskId: "run-summary",
 		reason: "threshold",
 		boundary: {
 			kind: "resume_checkpoint",
 			resumeAfter: {
-				continuation: { kind: "need_assistant", overflowRecoveryUsed: false },
+				continuation: { kind: "need_assistant" },
 				triggerEntryId: "tip",
 			},
 		},
 	};
-	const compactionTask: SummaryTask = { taskId: "compaction", reason: "manual", boundary: { kind: "finish" } };
-	const navigationTask: SummaryTask = {
+	const _compactionTask: SummaryTask = { taskId: "compaction", reason: "manual", boundary: { kind: "finish" } };
+	const _navigationTask: SummaryTask = {
 		taskId: "navigation",
 		boundary: { kind: "commit_navigation", targetId: "target" },
 	};
@@ -273,7 +268,7 @@ function cases(fixture: Fixture): InstalledOperation[] {
 			state: {
 				...scope(),
 				at: "checkpoint",
-				continuation: { kind: "need_assistant", overflowRecoveryUsed: false },
+				continuation: { kind: "need_assistant" },
 				triggerEntryId: "tip",
 			},
 			intent: { kind: "run", promptEntryIds: ["tip"] },
@@ -352,48 +347,6 @@ function cases(fixture: Fixture): InstalledOperation[] {
 			terminalEvents: ["run_end"],
 		},
 		{
-			state: { ...scope(), at: "summary.deciding", task: runTask },
-			intent: { kind: "run", promptEntryIds: ["tip"] },
-			terminalEvents: ["compaction_end", "run_end"],
-		},
-		{
-			state: {
-				...scope(),
-				at: "summary.ready",
-				task: compactionTask,
-				summaryContext: summaryContext(fixture.configuration),
-				nextAttempt: 1,
-			},
-			intent: { kind: "compaction" },
-			terminalEvents: ["compaction_end"],
-		},
-		{
-			state: {
-				...scope(),
-				at: "summary.effect_pending",
-				task: navigationTask,
-				summaryContext: summaryContext(fixture.configuration),
-				attempt: 1,
-				request: { index: 0, usageId: "usage" },
-				usageIds: [],
-			},
-			intent: { kind: "navigation", targetId: "target", summarize: true },
-			terminalEvents: ["navigation_end"],
-		},
-		{
-			state: {
-				...scope(),
-				at: "summary.retry_wait",
-				task: runTask,
-				summaryContext: summaryContext(fixture.configuration),
-				nextAttempt: 2,
-				notBefore: Date.now() + 100_000,
-				errorMessage: "retry",
-			},
-			intent: { kind: "run", promptEntryIds: ["tip"] },
-			terminalEvents: ["compaction_end", "run_end"],
-		},
-		{
 			state: { ...scope(), at: "navigation.ready_to_commit", targetId: "target" },
 			intent: { kind: "navigation", targetId: "target", summarize: false },
 			terminalEvents: ["navigation_end"],
@@ -448,7 +401,8 @@ describe("runtime total drive", () => {
 
 describe("runtime cancellation reconciliation", () => {
 	it("reconciles every durable leaf without ordinary hook admission", async () => {
-		for (let index = 0; index < 13; index++) {
+		const totalCases = cases(await createFixture()).length;
+		for (let index = 0; index < totalCases; index++) {
 			const fixture = await createFixture();
 			const installed = cases(fixture)[index]!;
 			await installOperation(fixture, installed);
@@ -497,7 +451,7 @@ describe("runtime cancellation reconciliation", () => {
 			state: {
 				...scope({ status: "running" }),
 				at: "checkpoint",
-				continuation: { kind: "need_assistant", overflowRecoveryUsed: false },
+				continuation: { kind: "need_assistant" },
 				triggerEntryId: "tip",
 			},
 			intent: { kind: "run", promptEntryIds: ["tip"] },
@@ -607,7 +561,6 @@ describe("runtime cancellation reconciliation", () => {
 			configuration: fixture.configuration,
 			streamOptions: {},
 			retryPolicy: { maxAttempts: 2, baseDelayMs: 10 },
-			overflowRecoveryUsed: false,
 		};
 		await installOperation(fixture, {
 			state: {
@@ -633,53 +586,6 @@ describe("runtime cancellation reconciliation", () => {
 		});
 		expect(await running).toMatchObject({ kind: "settled", outcome: { status: "aborted" } });
 		expect(fixture.events.some((event) => event.type === "retry_start")).toBe(false);
-	});
-
-	it("drops a stale structural hook result when cancellation commits first", async () => {
-		const fixture = await createFixture();
-		const task: SummaryTask = { taskId: "task", reason: "manual", boundary: { kind: "finish" } };
-		const deciding = { ...scope({ status: "running" }), at: "summary.deciding", task } as const;
-		await installOperation(fixture, {
-			state: deciding,
-			intent: { kind: "compaction" },
-			writes: [
-				storedValues.setValue(storedValues.operationPreparation(operationId, task.taskId), {
-					kind: "compaction",
-					messagesToSummarize: [user("history")],
-					turnPrefixMessages: [],
-					retainedTail: [],
-					isSplitTurn: false,
-					tokensBefore: 100,
-					fileOps: { read: [], written: [], edited: [] },
-					settings: DEFAULT_COMPACTION_SETTINGS,
-				}),
-			],
-			terminalEvents: ["compaction_end"],
-		});
-		let releaseHook!: () => void;
-		const hookStarted = new Promise<void>((resolve) => {
-			fixture.hooks.on("before_compaction", async () => {
-				resolve();
-				await new Promise<void>((release) => {
-					releaseHook = release;
-				});
-				return {
-					compaction: { summary: "stale", tokensBefore: 100, retainedTail: [] },
-				};
-			});
-		});
-		const running = runStructuralDecision(fixture.lane, fixture.drive, deciding);
-		await hookStarted;
-		await fixture.lane.requestOperationAbort(operationId, BACKGROUND_CONTEXT);
-		releaseHook();
-
-		expect(await running).toEqual({ kind: "continue" });
-		expect(await fixture.session.findEntries({ type: "compaction" }, BACKGROUND_CONTEXT)).toEqual([]);
-		expect(await driveOperation(fixture.lane, fixture.drive)).toMatchObject({
-			kind: "settled",
-			outcome: { status: "aborted" },
-		});
-		expect(fixture.events.at(-1)).toMatchObject({ type: "compaction_end", status: "aborted" });
 	});
 
 	it("keeps the deferred cleanup signal separate from operation abort", () => {

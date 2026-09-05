@@ -26,9 +26,7 @@ export {
 	createAgentSessionServices,
 } from "./agent-session-services.ts";
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.ts";
-export type { CompactionResult } from "./compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
-export { areExperimentalFeaturesEnabled } from "./experimental.ts";
 // Extensions system
 export {
 	type AgentEndEvent,
@@ -60,11 +58,9 @@ export {
 	type LoadExtensionsResult,
 	type MessageRenderer,
 	type RegisteredCommand,
-	type SessionBeforeCompactEvent,
 	type SessionBeforeForkEvent,
 	type SessionBeforeSwitchEvent,
 	type SessionBeforeTreeEvent,
-	type SessionCompactEvent,
 	type SessionShutdownEvent,
 	type SessionStartEvent,
 	type SessionTreeEvent,

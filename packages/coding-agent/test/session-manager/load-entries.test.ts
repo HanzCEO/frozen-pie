@@ -79,20 +79,6 @@ describe("SessionManager.inMemory with preloaded entries", () => {
 		expect(session.getLabel(labelledId)).toBe("checkpoint");
 	});
 
-	it("resolves a compaction against the entry it was written against", () => {
-		let keptId = "";
-		const entries = storedEntries((source) => {
-			source.appendMessage(userMessage("dropped"));
-			keptId = source.appendMessage(userMessage("kept"));
-			source.appendCompaction("summary so far", keptId, 1000);
-		});
-
-		const session = SessionManager.inMemory("/project", undefined, entries);
-		const context = session.buildContextEntries();
-
-		expect(context.some((entry) => entry.id === keptId)).toBe(true);
-	});
-
 	it("creates a header from the options when the entries carry none", () => {
 		const entries = storedEntries((source) => source.appendMessage(userMessage("hello")));
 

@@ -722,7 +722,6 @@ Extension prompt content`,
 			const loader = new DefaultResourceLoader({
 				cwd,
 				agentDir,
-				settingsManager: SettingsManager.inMemory({ packages: ["npm:metadata-pkg"] }),
 			});
 			await loader.reload();
 
@@ -736,17 +735,6 @@ Extension prompt content`,
 				promptPaths: [{ path: extensionPromptsDir, metadata: extensionMetadata }],
 				themePaths: [{ path: extensionThemesDir, metadata: extensionMetadata }],
 			});
-
-			const packageSourceInfo = { source: "npm:metadata-pkg", scope: "user", origin: "package" };
-			expect(loader.getSkills().skills.find((skill) => skill.name === "package-skill")?.sourceInfo).toMatchObject(
-				packageSourceInfo,
-			);
-			expect(
-				loader.getPrompts().prompts.find((prompt) => prompt.name === "package-prompt")?.sourceInfo,
-			).toMatchObject(packageSourceInfo);
-			expect(loader.getThemes().themes.find((theme) => theme.name === "package-theme")?.sourceInfo).toMatchObject(
-				packageSourceInfo,
-			);
 
 			expect(loader.getSkills().skills.find((skill) => skill.name === "extension-skill")?.sourceInfo).toMatchObject(
 				extensionMetadata,

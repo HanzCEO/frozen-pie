@@ -1,9 +1,10 @@
-const PREFER_STRICT_TOOL_SAMPLING = { type: "json_schema", strict: "prefer" } as const;
-
+// Stub — experimental features removed
 export function areExperimentalFeaturesEnabled(): boolean {
-	return process.env.PI_EXPERIMENTAL === "1";
+	return false;
 }
-
-export function getExperimentalToolSampling() {
-	return areExperimentalFeaturesEnabled() ? PREFER_STRICT_TOOL_SAMPLING : undefined;
+export function getExperimentalToolSampling(): boolean {
+	return false;
+}
+export function isInternalProcess(): boolean {
+	return false;
 }

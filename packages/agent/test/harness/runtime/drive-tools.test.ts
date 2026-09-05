@@ -8,7 +8,6 @@ import {
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, WatchHandle } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT, type Context } from "../../../src/harness/context.ts";
 import { HookRegistry } from "../../../src/harness/hooks.ts";
 import { runTools } from "../../../src/harness/runtime/drive/tools.ts";
@@ -170,7 +169,6 @@ async function createFixture(options: FixtureOptions): Promise<Fixture> {
 		at: "tools",
 		control: options.cancelled ? { status: "cancel_requested", requestedAt: 30 } : { status: "running" },
 		settings: {
-			compaction: DEFAULT_COMPACTION_SETTINGS,
 			steeringMode: "all",
 			followUpMode: "all",
 			toolExecution: options.mode ?? "parallel",
@@ -208,7 +206,6 @@ async function createFixture(options: FixtureOptions): Promise<Fixture> {
 		resources: {},
 		streamOptions: {},
 		retryPolicy: { enabled: false, maxRetries: 0, baseDelayMs: 0 },
-		compaction: DEFAULT_COMPACTION_SETTINGS,
 		steeringMode: "all",
 		followUpMode: "all",
 		toolExecution: options.mode ?? "parallel",

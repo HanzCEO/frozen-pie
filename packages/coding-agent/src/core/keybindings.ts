@@ -24,7 +24,6 @@ export interface AppKeybindings {
 	"app.tools.expand": true;
 	"app.thinking.toggle": true;
 	"app.session.toggleNamedFilter": true;
-	"app.editor.external": true;
 	"app.message.copy": true;
 	"app.message.followUp": true;
 	"app.message.dequeue": true;
@@ -60,10 +59,10 @@ export interface AppKeybindings {
 export type AppKeybinding = keyof AppKeybindings;
 
 export function useWindowsKeybindings(
-	platform: NodeJS.Platform = process.platform,
+	_platform: NodeJS.Platform = process.platform,
 	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-	return platform === "win32" || (platform === "linux" && Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP));
+	return Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP);
 }
 
 declare module "@earendil-works/pi-tui" {
@@ -76,7 +75,7 @@ export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
 	"tui.editor.undo": {
 		...TUI_KEYBINDINGS["tui.editor.undo"],
-		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
+		defaultKeys: windowsKeybindings ? "alt+z" : "ctrl+-",
 	},
 	"tui.altScreen.previousPrompt": {
 		...TUI_KEYBINDINGS["tui.altScreen.previousPrompt"],
@@ -94,7 +93,7 @@ export const KEYBINDINGS = {
 	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
 	"app.suspend": {
-		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
+		defaultKeys: "ctrl+z",
 		description: "Suspend to background",
 	},
 	"app.thinking.cycle": {
@@ -122,10 +121,6 @@ export const KEYBINDINGS = {
 	"app.session.toggleNamedFilter": {
 		defaultKeys: "ctrl+n",
 		description: "Toggle named session filter",
-	},
-	"app.editor.external": {
-		defaultKeys: "ctrl+g",
-		description: "Open external editor",
 	},
 	"app.message.copy": {
 		defaultKeys: "ctrl+x",
@@ -280,7 +275,6 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	expandTools: "app.tools.expand",
 	toggleThinking: "app.thinking.toggle",
 	toggleSessionNamedFilter: "app.session.toggleNamedFilter",
-	externalEditor: "app.editor.external",
 	followUp: "app.message.followUp",
 	dequeue: "app.message.dequeue",
 	pasteImage: "app.clipboard.pasteImage",

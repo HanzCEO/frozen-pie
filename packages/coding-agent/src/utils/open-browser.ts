@@ -8,12 +8,7 @@ import { spawn } from "node:child_process";
  * `start` runs, which would make attacker-controlled URLs injectable.
  */
 export function openBrowser(target: string): void {
-	const [cmd, args]: [string, string[]] =
-		process.platform === "darwin"
-			? ["open", [target]]
-			: process.platform === "win32"
-				? ["rundll32", ["url.dll,FileProtocolHandler", target]]
-				: ["xdg-open", [target]];
+	const [cmd, args]: [string, string[]] = process.platform === "darwin" ? ["open", [target]] : ["xdg-open", [target]];
 
 	// spawn reports launcher failures (for example, missing xdg-open) via an
 	// error event. Browser launch is best-effort: callers still present the target

@@ -12,7 +12,6 @@ import {
 	trackDetachedChildPid,
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
-import { getExperimentalToolSampling } from "../experimental.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { BASH_UPDATE_THROTTLE_MS, createShellRenderers } from "./renderers/bash.ts";
@@ -94,10 +93,9 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 			const commandFromStdin = shellConfig.commandTransport === "stdin";
 			const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
 				cwd,
-				detached: process.platform !== "win32",
+				detached: true,
 				env: env ?? getShellEnv(),
 				stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
-				windowsHide: true,
 			});
 			if (commandFromStdin) {
 				child.stdin?.on("error", () => {});
@@ -236,7 +234,7 @@ export function createShellToolDefinition(
 		promptSnippet: config.promptSnippet,
 		promptGuidelines: exposeSessionEnvironment && config.promptGuidelines ? [...config.promptGuidelines] : undefined,
 		parameters: bashSchema,
-		constrainedSampling: getExperimentalToolSampling(),
+		constrainedSampling: false,
 		async execute(
 			_toolCallId,
 			{ command, timeout }: { command: string; timeout?: number },

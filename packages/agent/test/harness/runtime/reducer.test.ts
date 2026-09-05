@@ -95,29 +95,6 @@ describe("lane snapshot reducer", () => {
 		watch.unsubscribe();
 	});
 
-	it("folds standalone compaction and preserves segment semantics", async () => {
-		const { lane, faux } = await createFixture();
-		await lane.appendMessage({ role: "user", content: "history", timestamp: 1 }, BACKGROUND_CONTEXT);
-		const watch = await lane.watch(BACKGROUND_CONTEXT);
-		const events: HarnessEvent[] = [];
-		watch.start((event) => {
-			events.push(event);
-		});
-		faux.setResponses([fauxAssistantMessage("summary")]);
-
-		expect(await lane.compact(undefined, BACKGROUND_CONTEXT)).toMatchObject({
-			ok: true,
-			value: { compaction: { status: "completed" } },
-		});
-		await settleEvents();
-		const replica = fold(watch.snapshot, events);
-
-		expect(replica.operation).toBeNull();
-		expect(replica.lastResult).toMatchObject({ kind: "compaction", status: "completed" });
-		expect(replica).toEqual(await watch.resnapshot(BACKGROUND_CONTEXT));
-		watch.unsubscribe();
-	});
-
 	it("replicates globally ordered queue changes", async () => {
 		const { lane } = await createFixture();
 		const watch = await lane.watch(BACKGROUND_CONTEXT);
@@ -137,42 +114,6 @@ describe("lane snapshot reducer", () => {
 		expect(replica.queues.map((item) => item.kind)).toEqual(["nextRun", "followUp"]);
 		expect(replica).toEqual(await watch.resnapshot(BACKGROUND_CONTEXT));
 		watch.unsubscribe();
-	});
-
-	it("keeps in-run compaction segments inside the open run", async () => {
-		const { lane } = await createFixture();
-		const snapshot = (await lane.watch(BACKGROUND_CONTEXT)).snapshot;
-		const running: LaneSnapshot = {
-			...snapshot,
-			operation: {
-				id: "run",
-				kind: "run",
-				startedAt: 1,
-				fromTipId: null,
-				status: "open",
-				runningTools: [],
-			},
-		};
-		expect(
-			reduceLaneSnapshot(running, {
-				type: "compaction_start",
-				lane: "main",
-				runId: "run",
-				reason: "threshold",
-				startedAt: 2,
-			}),
-		).toBeUndefined();
-		expect(
-			reduceLaneSnapshot(running, {
-				type: "compaction_end",
-				lane: "main",
-				runId: "run",
-				reason: "threshold",
-				status: "declined",
-				endedAt: 3,
-			}),
-		).toBeUndefined();
-		expect(running).toMatchObject({ operation: { id: "run", kind: "run" } });
 	});
 
 	it("retains settled parallel tools until each source-ordered result is placed", async () => {

@@ -12,7 +12,6 @@ import type {
 	AbortResult,
 	AgentLane,
 	CancelQueuedResult,
-	CompactionResult,
 	DriveOptions,
 	DriveResult,
 	HarnessEvent,
@@ -31,8 +30,6 @@ import type {
 	SuspendedRun,
 	WatchHandle,
 } from "../agent-harness.ts";
-import { type BranchPreparation, prepareBranchEntries } from "../compaction/branch-summarization.ts";
-import { prepareCompaction } from "../compaction/compaction.ts";
 import { awaitWithContext, type Context } from "../context.ts";
 import { toolResultFromMessage } from "../execution/tools.ts";
 import type { HookRegistry } from "../hooks.ts";
@@ -45,7 +42,6 @@ import {
 	InvalidNavigation,
 	LaneBusy,
 	NoActiveOperation,
-	NothingToCompact,
 	NothingToResume,
 	OperationMismatch,
 	Result,
@@ -72,7 +68,6 @@ import type {
 	Session,
 	SessionReader,
 	StartingOperation,
-	SummaryDecidingOperation,
 	Write,
 } from "../session/types.ts";
 import {
@@ -81,7 +76,6 @@ import {
 	laneConfig,
 	laneState as laneStateValue,
 	operationMeta as operationMetaValue,
-	operationPreparation,
 	operationResult as operationResultValue,
 	operationState as operationStateValue,
 	operationToolArgs,
@@ -90,7 +84,6 @@ import {
 	setValue,
 } from "../session/values.ts";
 import { formatSkillInvocation } from "../skills.ts";
-import { durableBranchPreparation, durableCompactionPreparation } from "./drive/structural.ts";
 import { driveOperation } from "./drive.ts";
 import { readAssistantFrames } from "./progress.ts";
 import { chainEntries, committedEntryEvents, readLaneQueues } from "./transcript.ts";
@@ -168,7 +161,6 @@ function selectAcceptedInbox(
 
 function capturedSettings<TContext extends object | undefined>(config: Config<TContext>): RunSettings {
 	return {
-		compaction: config.compaction,
 		steeringMode: config.steeringMode,
 		followUpMode: config.followUpMode,
 		toolExecution: config.toolExecution,
@@ -208,10 +200,6 @@ function capturedModel(operation: Operation): ModelIdentity | undefined {
 		case "deferred.suspended":
 		case "deferred.effect_pending":
 			return state.configuration.model;
-		case "summary.ready":
-		case "summary.effect_pending":
-		case "summary.retry_wait":
-			return state.summaryContext.configuration.model;
 		default:
 			return undefined;
 	}
@@ -485,9 +473,6 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 		const startedAt = Date.now();
 		const operationId = request.operationId ?? this.session.idGenerator.next(startedAt);
 		const acceptanceConfig = this.readConfig();
-		if (request.kind === "compaction") {
-			return this.acceptCompaction(request, operationId, startedAt, acceptanceConfig, context);
-		}
 		if (request.kind === "navigation") {
 			return this.acceptNavigation(request, operationId, startedAt, acceptanceConfig, context);
 		}
@@ -676,89 +661,6 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 		}, context);
 	}
 
-	private acceptCompaction(
-		request: Extract<OperationRequest, { kind: "compaction" }>,
-		operationId: string,
-		startedAt: number,
-		acceptanceConfig: Config<TContext>,
-		context: Context,
-	): Promise<OperationAdmissionResult> {
-		const taskId = this.session.idGenerator.next(startedAt);
-		return this.command<OperationAdmissionResult>(async (state, reader) => {
-			if (state.operation !== null) {
-				return {
-					kind: "return",
-					result: Result.err(
-						new LaneBusy({
-							lane: this.name,
-							operationId: state.operation.meta.operationId,
-							operationKind: state.operation.meta.intent.kind,
-							message: `Lane ${JSON.stringify(this.name)} already has an active operation`,
-						}),
-					),
-				};
-			}
-			const path =
-				state.tipId === null
-					? []
-					: (
-							await reader.scanBranch(
-								{ start: state.tipId, stopAtType: "compaction", order: "newestFirst" },
-								context,
-							)
-						).reverse();
-			const prepared = prepareCompaction(path, acceptanceConfig.compaction);
-			if (!prepared.ok) throw prepared.error;
-			if (prepared.value === undefined) {
-				return {
-					kind: "return",
-					result: Result.err(
-						new NothingToCompact({
-							lane: this.name,
-							message: `Lane ${JSON.stringify(this.name)} has nothing to compact`,
-						}),
-					),
-				};
-			}
-			const meta: OperationMeta = {
-				operationId,
-				lane: this.name,
-				sourceTipId: state.tipId,
-				startedAt,
-				intent: {
-					kind: "compaction",
-					...(request.customInstructions === undefined ? {} : { customInstructions: request.customInstructions }),
-				},
-			};
-			const operationState: SummaryDecidingOperation = {
-				at: "summary.deciding",
-				control: { status: "running" },
-				settings: capturedSettings(acceptanceConfig),
-				latestAssistantEntryId: null,
-				task: {
-					taskId,
-					reason: "manual",
-					...(request.customInstructions === undefined ? {} : { customInstructions: request.customInstructions }),
-					boundary: { kind: "finish" },
-				},
-			};
-			return {
-				kind: "commit",
-				writes: [
-					setValue(operationPreparation(operationId, taskId), durableCompactionPreparation(prepared.value)),
-					setValue(operationMetaValue(operationId), meta),
-					setValue(operationStateValue(operationId), operationState),
-					setValue(laneStateValue(this.name), durableLaneState(state, operationId)),
-				],
-				next: { ...state, operation: { meta, state: operationState } },
-				materialize: () => Result.ok({ operationId, kind: "compaction", startedAt }),
-				events: () => [
-					{ type: "compaction_start", lane: this.name, runId: operationId, reason: "manual", startedAt },
-				],
-			};
-		}, context);
-	}
-
 	private async acceptNavigation(
 		request: Extract<OperationRequest, { kind: "navigation" }>,
 		operationId: string,
@@ -766,34 +668,10 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 		acceptanceConfig: Config<TContext>,
 		context: Context,
 	): Promise<OperationAdmissionResult> {
-		const taskId = this.session.idGenerator.next(startedAt);
 		const targetId = request.targetId;
 		const options = request.options ?? {};
-		const summarize = options.summarize ?? false;
 		for (;;) {
 			const observedTipId = this.state.tipId;
-			let preparation: BranchPreparation | undefined;
-			if (summarize && observedTipId !== null && targetId !== null) {
-				const target = await this.session.getEntries([targetId], context);
-				if (target.has(targetId)) {
-					const [oldPath, targetPath] = await Promise.all([
-						this.session.scanBranch({ start: observedTipId, order: "newestFirst" }, context),
-						this.session.scanBranch({ start: targetId, order: "newestFirst" }, context),
-					]);
-					const oldIds = new Set(oldPath.map((entry) => entry.id));
-					const commonAncestorId = targetPath.find((entry) => oldIds.has(entry.id))?.id ?? null;
-					preparation = prepareBranchEntries(
-						oldPath
-							.slice(
-								0,
-								commonAncestorId === null
-									? oldPath.length
-									: oldPath.findIndex((entry) => entry.id === commonAncestorId),
-							)
-							.reverse(),
-					);
-				}
-			}
 			const accepted = await this.command<OperationAdmissionResult | undefined>(async (state, reader) => {
 				if (state.operation !== null) {
 					return {
@@ -833,29 +711,21 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 						),
 					};
 				}
-				if (summarize && (state.tipId === null || targetId === null)) {
+				if (targetId !== null && !(await reader.getEntries([targetId], context)).has(targetId)) {
 					return {
 						kind: "return",
 						result: Result.err(
-							new InvalidNavigation({
-								lane: this.name,
-								reason: state.tipId === null ? "source_root" : "target_root",
-								message: "Summarized navigation requires non-root source and target entries",
+							new UnknownTarget({
+								targetId,
+								message: `Navigation target ${JSON.stringify(targetId)} does not exist`,
 							}),
 						),
 					};
 				}
-				if (targetId !== null && !(await reader.getEntries([targetId], context)).has(targetId)) {
-					return {
-						kind: "return",
-						result: Result.err(new UnknownTarget({ targetId, message: `Unknown target: ${targetId}` })),
-					};
-				}
-
 				const intent: OperationMeta["intent"] = {
 					kind: "navigation",
 					targetId,
-					summarize,
+					summarize: false,
 					...(options.label === undefined ? {} : { label: options.label }),
 					...(options.customInstructions === undefined ? {} : { customInstructions: options.customInstructions }),
 				};
@@ -871,41 +741,17 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 					settings: capturedSettings(acceptanceConfig),
 					latestAssistantEntryId: null,
 				};
-				let operationState: SummaryDecidingOperation | NavigationReadyToCommitOperation;
-				const writes: Write[] = [];
-				if (summarize) {
-					if (state.tipId === null || targetId === null || preparation === undefined) {
-						throw new SessionInvariantError("Validated summarized navigation is missing its preparation");
-					}
-					writes.push(setValue(operationPreparation(operationId, taskId), durableBranchPreparation(preparation)));
-					operationState = {
-						...operationScope,
-						at: "summary.deciding",
-						task: {
-							taskId,
-							...(options.customInstructions === undefined
-								? {}
-								: { customInstructions: options.customInstructions }),
-							boundary: {
-								kind: "commit_navigation",
-								targetId,
-								...(options.label === undefined ? {} : { label: options.label }),
-							},
-						},
-					};
-				} else {
-					operationState = {
-						...operationScope,
-						at: "navigation.ready_to_commit",
-						targetId,
-						...(options.label === undefined ? {} : { label: options.label }),
-					};
-				}
-				writes.push(
+				const operationState: NavigationReadyToCommitOperation = {
+					...operationScope,
+					at: "navigation.ready_to_commit",
+					targetId,
+					...(options.label === undefined ? {} : { label: options.label }),
+				};
+				const writes: Write[] = [
 					setValue(operationMetaValue(operationId), meta),
 					setValue(operationStateValue(operationId), operationState),
 					setValue(laneStateValue(this.name), durableLaneState(state, operationId)),
-				);
+				];
 				return {
 					kind: "commit",
 					writes,
@@ -1195,38 +1041,6 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 			new SessionInvariantError(`Run ${admission.value.operationId} returned an unwaited retry`),
 			context,
 		);
-	}
-
-	async compact(options: { customInstructions?: string } | undefined, context: Context): Promise<CompactionResult> {
-		const admission = await this.accept(
-			{
-				kind: "compaction",
-				...(options?.customInstructions === undefined ? {} : { customInstructions: options.customInstructions }),
-			},
-			context,
-		);
-		if (!admission.ok) {
-			switch (admission.error._tag) {
-				case "LaneBusy":
-				case "NothingToCompact":
-				case "Closed":
-					return Result.err(admission.error);
-				default:
-					throw this.onFault(
-						new SessionInvariantError(`Compaction acceptance returned ${admission.error._tag}`),
-						context,
-					);
-			}
-		}
-		const compacted = await this.driveStructuralAdmission(admission.value, context);
-		if (!compacted.ok) return compacted;
-		const continuation = await this.continueAfterStructural(compacted.value, context);
-		return continuation.ok
-			? Result.ok({
-					compaction: compacted.value,
-					...(continuation.value === undefined ? {} : { run: continuation.value }),
-				})
-			: continuation;
 	}
 
 	async navigateTree(
@@ -1730,12 +1544,7 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 		const transcript =
 			captured.tipId === null
 				? []
-				: (
-						await reader.scanBranch(
-							{ start: captured.tipId, stopAtType: "compaction", order: "newestFirst" },
-							context,
-						)
-					).reverse();
+				: (await reader.scanBranch({ start: captured.tipId, order: "newestFirst" }, context)).reverse();
 		const queues = await readLaneQueues(reader, captured.inbox, context);
 		let lastResult: OperationResultRecord | undefined;
 		if (captured.lastOperationId !== null) {
@@ -1843,13 +1652,6 @@ export class Lane<TContext extends object | undefined> implements AgentLane {
 					}
 					break;
 				}
-				case "summary.retry_wait":
-					retry = {
-						attempt: state.nextAttempt,
-						maxAttempts: state.summaryContext.retryPolicy.maxAttempts,
-						nextAttemptAt: state.notBefore,
-					};
-					break;
 				default:
 					break;
 			}

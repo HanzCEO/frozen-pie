@@ -1,6 +1,5 @@
 import type { DeferredHandle } from "@earendil-works/pi-ai";
 import type { HarnessEvent } from "../../agent-harness.ts";
-import { getTelemetryContext } from "../../context.ts";
 import { SessionInvariantError } from "../../session/session.ts";
 import type {
 	DeferredEffectPendingOperation,
@@ -26,7 +25,6 @@ async function cancelDeferredBestEffort<TContext extends object | undefined>(
 	try {
 		await lane.models.cancelDeferred(model, handle, {
 			signal: drive.closeSignal,
-			telemetryContext: getTelemetryContext(drive.context),
 			timeoutMs: deferred.streamOptions.timeoutMs,
 			maxRetries: deferred.streamOptions.maxRetries,
 			maxRetryDelayMs: deferred.streamOptions.maxRetryDelayMs,
@@ -67,26 +65,6 @@ async function publishAbortedTerminal<TContext extends object | undefined>(
 			const cleanup = await operationCleanupWrites(reader, drive.operationId, current, drive.context);
 			const events: HarnessEvent[] = [];
 			if (meta.intent.kind === "run") {
-				switch (current.at) {
-					case "summary.deciding":
-					case "summary.ready":
-					case "summary.effect_pending":
-					case "summary.retry_wait":
-						if (current.task.boundary.kind !== "resume_checkpoint" || current.task.reason === undefined) {
-							throw new SessionInvariantError("Cancelled run summary has an invalid result boundary");
-						}
-						events.push({
-							type: "compaction_end",
-							lane: lane.name,
-							runId: drive.operationId,
-							reason: current.task.reason,
-							status: "aborted",
-							endedAt: record.endedAt,
-						});
-						break;
-					default:
-						break;
-				}
 				events.push({
 					type: "run_end",
 					lane: lane.name,
@@ -94,15 +72,6 @@ async function publishAbortedTerminal<TContext extends object | undefined>(
 					status: "aborted",
 					fromTipId: meta.sourceTipId,
 					tipId: state.tipId,
-					endedAt: record.endedAt,
-				});
-			} else if (meta.intent.kind === "compaction") {
-				events.push({
-					type: "compaction_end",
-					lane: lane.name,
-					runId: drive.operationId,
-					reason: "manual",
-					status: "aborted",
 					endedAt: record.endedAt,
 				});
 			} else {
@@ -163,10 +132,6 @@ export async function reconcileOperation<TContext extends object | undefined>(
 		case "checkpoint":
 		case "assistant.ready":
 		case "assistant.retry_wait":
-		case "summary.deciding":
-		case "summary.ready":
-		case "summary.effect_pending":
-		case "summary.retry_wait":
 		case "navigation.ready_to_commit":
 			return publishAbortedTerminal(lane, drive, state);
 	}

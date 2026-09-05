@@ -1,8 +1,5 @@
 import { spawnSync } from "child_process";
-import { randomUUID } from "crypto";
-import { readFileSync, unlinkSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { readFileSync } from "fs";
 
 import { clipboard } from "./clipboard-native.ts";
 import { loadPhoton } from "./photon.ts";
@@ -16,7 +13,6 @@ const SUPPORTED_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "im
 
 const DEFAULT_LIST_TIMEOUT_MS = 1000;
 const DEFAULT_READ_TIMEOUT_MS = 3000;
-const DEFAULT_POWERSHELL_TIMEOUT_MS = 5000;
 const DEFAULT_MAX_BUFFER_BYTES = 50 * 1024 * 1024;
 
 export function isWaylandSession(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -153,63 +149,6 @@ function isWSL(env: NodeJS.ProcessEnv = process.env): boolean {
 	}
 }
 
-/**
- * On WSL, the Linux clipboard (Wayland/X11) does not receive image data from
- * Windows screenshots (Win+Shift+S). PowerShell can access the Windows clipboard
- * directly, so we use it as a fallback.
- */
-function readClipboardImageViaPowerShell(): ClipboardImage | null {
-	const tmpFile = join(tmpdir(), `pi-wsl-clip-${randomUUID()}.png`);
-
-	try {
-		const winPathResult = runCommand("wslpath", ["-w", tmpFile], { timeoutMs: DEFAULT_LIST_TIMEOUT_MS });
-		if (!winPathResult.ok) {
-			return null;
-		}
-
-		const winPath = winPathResult.stdout.toString("utf-8").trim();
-		if (!winPath) {
-			return null;
-		}
-
-		const psQuotedWinPath = winPath.replaceAll("'", "''");
-		const psScript = [
-			"Add-Type -AssemblyName System.Windows.Forms",
-			"Add-Type -AssemblyName System.Drawing",
-			`$path = '${psQuotedWinPath}'`,
-			"$img = [System.Windows.Forms.Clipboard]::GetImage()",
-			"if ($img) { $img.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); Write-Output 'ok' } else { Write-Output 'empty' }",
-		].join("; ");
-
-		const result = runCommand("powershell.exe", ["-NoProfile", "-Command", psScript], {
-			timeoutMs: DEFAULT_POWERSHELL_TIMEOUT_MS,
-		});
-		if (!result.ok) {
-			return null;
-		}
-
-		const output = result.stdout.toString("utf-8").trim();
-		if (output !== "ok") {
-			return null;
-		}
-
-		const bytes = readFileSync(tmpFile);
-		if (bytes.length === 0) {
-			return null;
-		}
-
-		return { bytes: new Uint8Array(bytes), mimeType: "image/png" };
-	} catch {
-		return null;
-	} finally {
-		try {
-			unlinkSync(tmpFile);
-		} catch {
-			// Ignore cleanup errors.
-		}
-	}
-}
-
 function readClipboardImageViaXclip(): ClipboardImage | null {
 	const targets = runCommand("xclip", ["-selection", "clipboard", "-t", "TARGETS", "-o"], {
 		timeoutMs: DEFAULT_LIST_TIMEOUT_MS,
@@ -258,10 +197,6 @@ export async function readClipboardImage(options?: {
 	const env = options?.env ?? process.env;
 	const platform = options?.platform ?? process.platform;
 
-	if (env.TERMUX_VERSION) {
-		return null;
-	}
-
 	let image: ClipboardImage | null = null;
 
 	if (platform === "linux") {
@@ -270,10 +205,6 @@ export async function readClipboardImage(options?: {
 
 		if (wayland || wsl) {
 			image = readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
-		}
-
-		if (!image && wsl) {
-			image = readClipboardImageViaPowerShell();
 		}
 
 		if (!image && !wayland) {

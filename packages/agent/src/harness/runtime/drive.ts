@@ -6,13 +6,7 @@ import { runDeferred } from "./drive/deferred.ts";
 import { runGeneration } from "./drive/generation.ts";
 import { reconcileOperation } from "./drive/reconcile.ts";
 import { recoverAssistantGeneration } from "./drive/recovery.ts";
-import {
-	commitNavigation,
-	recoverStructuralGeneration,
-	runStructuralDecision,
-	runStructuralGeneration,
-	runStructuralRetryWait,
-} from "./drive/structural.ts";
+import { commitNavigation } from "./drive/structural.ts";
 import { runTools } from "./drive/tools.ts";
 import type { Lane } from "./lane.ts";
 import type { Drive, ProcedureResult } from "./types.ts";
@@ -73,18 +67,6 @@ export async function driveOperation<TContext extends object | undefined>(
 					case "deferred.suspended":
 					case "deferred.effect_pending":
 						result = await runDeferred(lane, drive, state);
-						break;
-					case "summary.deciding":
-						result = await runStructuralDecision(lane, drive, state);
-						break;
-					case "summary.ready":
-						result = await runStructuralGeneration(lane, drive, state);
-						break;
-					case "summary.effect_pending":
-						result = await recoverStructuralGeneration(lane, drive, state);
-						break;
-					case "summary.retry_wait":
-						result = await runStructuralRetryWait(lane, drive, state);
 						break;
 					case "navigation.ready_to_commit":
 						result = await commitNavigation(lane, drive, state);

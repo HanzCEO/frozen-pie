@@ -47,7 +47,6 @@ describe("config value env var syntax migration", () => {
 					anthropic: { type: "api_key", key: "ANTHROPIC_API_KEY" },
 					openai: { type: "api_key", key: "$OPENAI_API_KEY" },
 					opencode: { type: "api_key", key: "public" },
-					github: { type: "oauth", access: "ACCESS_TOKEN", refresh: "REFRESH_TOKEN", expires: 1 },
 				},
 				null,
 				2,
@@ -65,7 +64,6 @@ describe("config value env var syntax migration", () => {
 		expect(migrated.anthropic.key).toBe("ANTHROPIC_API_KEY");
 		expect(migrated.openai.key).toBe("$OPENAI_API_KEY");
 		expect(migrated.opencode.key).toBe("public");
-		expect(migrated.github.access).toBe("ACCESS_TOKEN");
 		expect(logSpy).not.toHaveBeenCalled();
 	});
 

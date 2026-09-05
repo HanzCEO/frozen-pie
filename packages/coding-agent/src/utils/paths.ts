@@ -80,14 +80,11 @@ export function normalizePath(input: string, options: PathInputOptions = {}): st
 	if (options.stripAtPrefix && normalized.startsWith("@")) {
 		normalized = normalized.slice(1);
 	}
-	if (process.platform === "win32") {
-		normalized = normalizeWindowsShellPath(normalized);
-	}
 
 	if (options.expandTilde ?? true) {
 		const home = options.homeDir ?? homedir();
 		if (normalized === "~") return home;
-		if (normalized.startsWith("~/") || (process.platform === "win32" && normalized.startsWith("~\\"))) {
+		if (normalized.startsWith("~/")) {
 			return join(home, normalized.slice(2));
 		}
 	}

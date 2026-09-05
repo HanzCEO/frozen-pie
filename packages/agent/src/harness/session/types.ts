@@ -1,8 +1,6 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { AssistantMessage, StopReason, Usage } from "@earendil-works/pi-ai";
 import type { AgentMessage, QueueMode, ThinkingLevel } from "../../types.ts";
-import type { BranchPreparation } from "../compaction/branch-summarization.ts";
-import type { CompactionPreparation, CompactionSettings } from "../compaction/compaction.ts";
 import type { Context } from "../context.ts";
 import type { AgentHarnessStreamOptions } from "../types.ts";
 import type { ListElement, ListReadOptions, ListWrite, StoredValue, Value, ValueList, ValueWrite } from "./values.ts";
@@ -13,7 +11,7 @@ export type SettledAssistantMessage = AssistantMessage & {
 	stopReason: Exclude<StopReason, "pending">;
 };
 
-export type EntryType = "message" | "compaction" | "branch_summary" | "custom";
+export type EntryType = "message" | "custom";
 
 export interface EntryBase {
 	id: string;
@@ -30,25 +28,6 @@ export interface MessageEntry extends EntryBase {
 	terminate?: true;
 }
 
-export interface CompactionEntry extends EntryBase {
-	type: "compaction";
-	summary: string;
-	retainedTail: AgentMessage[];
-	tokensBefore: number;
-	details?: JsonValue;
-	usage?: Usage;
-	fromHook: boolean;
-}
-
-export interface BranchSummaryEntry extends EntryBase {
-	type: "branch_summary";
-	fromId: string | null;
-	summary: string;
-	details?: JsonValue;
-	usage?: Usage;
-	fromHook: boolean;
-}
-
 export interface CustomEntry extends EntryBase {
 	type: "custom";
 	customType: string;
@@ -61,7 +40,7 @@ export type EntryProjector = (
 	context: Context,
 ) => AgentMessage[] | undefined | Promise<AgentMessage[] | undefined>;
 
-export type Entry = MessageEntry | CompactionEntry | BranchSummaryEntry | CustomEntry;
+export type Entry = MessageEntry | CustomEntry;
 
 /** Entry supplied to a transaction before storage assigns sequence and timestamp. */
 export type NewEntry<TEntry extends Entry = Entry> = TEntry extends Entry ? Omit<TEntry, "seq" | "timestamp"> : never;
@@ -79,7 +58,6 @@ export interface OperationMeta {
 	startedAt: number;
 	intent:
 		| { kind: "run"; promptEntryIds: string[] }
-		| { kind: "compaction"; customInstructions?: string }
 		| {
 				kind: "navigation";
 				targetId: string | null;
@@ -116,9 +94,7 @@ export interface OperationResultRecord {
 	endedAt: number;
 }
 
-export type Continuation =
-	| { kind: "need_assistant"; overflowRecoveryUsed: boolean }
-	| { kind: "may_finish"; includeFinalAssistant: boolean };
+export type Continuation = { kind: "need_assistant" } | { kind: "may_finish"; includeFinalAssistant: boolean };
 
 /** Checkpoint payload; the flat leaf literal replaces the old nested phase tag. */
 export interface CheckpointData {
@@ -144,7 +120,6 @@ export interface GenerationContext {
 	configuration: LaneConfiguration;
 	streamOptions: AgentHarnessStreamOptions;
 	retryPolicy: NormalizedRetryPolicy;
-	overflowRecoveryUsed: boolean;
 }
 
 interface ToolCallSource {
@@ -186,7 +161,6 @@ export interface Cancellable {
 }
 
 export interface RunSettings {
-	compaction: CompactionSettings;
 	steeringMode: QueueMode;
 	followUpMode: QueueMode;
 	toolExecution: "sequential" | "parallel";
@@ -311,7 +285,7 @@ export interface NavigationReadyToCommitOperation extends OperationScope {
 	label?: string;
 }
 
-/** Flat durable operation state: exactly 13 family-neutral dispatcher leaves. */
+/** Flat durable operation state leaves. */
 export type OperationState =
 	| StartingOperation
 	| CheckpointOperation
@@ -321,10 +295,6 @@ export type OperationState =
 	| ToolsOperation
 	| DeferredSuspendedOperation
 	| DeferredEffectPendingOperation
-	| SummaryDecidingOperation
-	| SummaryReadyOperation
-	| SummaryEffectPendingOperation
-	| SummaryRetryWaitOperation
 	| NavigationReadyToCommitOperation;
 
 export type OperationAt = OperationState["at"];
@@ -356,24 +326,11 @@ export interface DurableFileOperations {
 	edited: string[];
 }
 
-export type DurableStructuralPreparation =
-	| {
-			kind: "compaction";
-			messagesToSummarize: CompactionPreparation["messagesToSummarize"];
-			turnPrefixMessages: CompactionPreparation["turnPrefixMessages"];
-			retainedTail: CompactionPreparation["retainedTail"];
-			isSplitTurn: boolean;
-			tokensBefore: number;
-			previousSummary?: string;
-			fileOps: DurableFileOperations;
-			settings: CompactionSettings;
-	  }
-	| {
-			kind: "branch_summary";
-			messages: BranchPreparation["messages"];
-			fileOps: DurableFileOperations;
-			totalTokens: number;
-	  };
+export type DurableStructuralPreparation = {
+	kind: "branch_summary";
+	fileOps: DurableFileOperations;
+	totalTokens: number;
+};
 
 export interface UsageRow {
 	id: string;

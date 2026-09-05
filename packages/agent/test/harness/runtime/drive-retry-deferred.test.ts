@@ -10,7 +10,6 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createModels } from "../../../../ai/src/models.ts";
 import type { HarnessEvent, WatchHandle } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT } from "../../../src/harness/context.ts";
 import { HookRegistry } from "../../../src/harness/hooks.ts";
 import { runCheckpoint, startRun } from "../../../src/harness/runtime/drive/checkpoint.ts";
@@ -104,7 +103,6 @@ async function createFixture(
 		resources: {},
 		streamOptions: { deferred: options.deferredSubmission ?? true },
 		retryPolicy: { enabled: true, maxRetries: 3, baseDelayMs: 10 },
-		compaction: DEFAULT_COMPACTION_SETTINGS,
 		steeringMode: "all",
 		followUpMode: "all",
 		toolExecution: "parallel",

@@ -56,10 +56,7 @@ export function readBoundedEntries<TContext extends object | undefined, TState e
 		capability,
 		async (state, _current, _meta, reader) => {
 			if (state.tipId === null) throw new SessionInvariantError("Run operation has no Branch tip");
-			const entries = await reader.scanBranch(
-				{ start: state.tipId, stopAtType: "compaction", order: "newestFirst" },
-				drive.context,
-			);
+			const entries = await reader.scanBranch({ start: state.tipId, order: "newestFirst" }, drive.context);
 			return { kind: "return", result: entries.reverse() };
 		},
 		drive.context,

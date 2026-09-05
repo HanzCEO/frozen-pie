@@ -86,36 +86,6 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(roles).toContain("assistant");
 	}, 90000);
 
-	test("should handle manual compaction", async () => {
-		await client.start();
-
-		// First send a prompt to have messages to compact
-		await client.promptAndWait("Say hello");
-
-		// Compact
-		const result = await client.compact();
-		expect(result.summary).toBeDefined();
-		expect(result.tokensBefore).toBeGreaterThan(0);
-
-		// Wait for file writes
-		await new Promise((resolve) => setTimeout(resolve, 200));
-
-		// Verify compaction in session file
-		const sessionsPath = join(sessionDir, "sessions");
-		const sessionDirs = readdirSync(sessionsPath);
-		const cwdSessionDir = join(sessionsPath, sessionDirs[0]);
-		const sessionFiles = readdirSync(cwdSessionDir).filter((f) => f.endsWith(".jsonl"));
-		const sessionContent = readFileSync(join(cwdSessionDir, sessionFiles[0]), "utf8");
-		const entries = sessionContent
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line));
-
-		const compactionEntries = entries.filter((e: { type: string }) => e.type === "compaction");
-		expect(compactionEntries.length).toBe(1);
-		expect(compactionEntries[0].summary).toBeDefined();
-	}, 120000);
-
 	test("should execute bash command", async () => {
 		await client.start();
 
@@ -346,20 +316,6 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(nodes.length).toBe(0);
 		expect(chainIds).toEqual(entries.map((e) => e.id));
 	}, 90000);
-
-	test("should retain pre-compaction entries in get_entries", async () => {
-		await client.start();
-
-		await client.promptAndWait("Reply with just 'ok'");
-		const before = await client.getEntries();
-
-		await client.compact();
-
-		const after = await client.getEntries();
-		// Append-only: pre-compaction entries are still there, in the same order
-		expect(after.entries.slice(0, before.entries.length).map((e) => e.id)).toEqual(before.entries.map((e) => e.id));
-		expect(after.entries.some((e) => e.type === "compaction")).toBe(true);
-	}, 120000);
 
 	test("should set and get session name", async () => {
 		await client.start();

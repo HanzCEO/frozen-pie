@@ -58,7 +58,7 @@ function resolvePath(cwd: string, path: string): string {
 	let normalized = path;
 	if (normalized === "~") {
 		normalized = homedir();
-	} else if (normalized.startsWith("~/") || (process.platform === "win32" && normalized.startsWith("~\\"))) {
+	} else if (normalized.startsWith("~/")) {
 		normalized = join(homedir(), normalized.slice(2));
 	} else if (normalized.startsWith("file://")) {
 		try {
@@ -175,10 +175,7 @@ async function runCommand(
 }
 
 async function findBashOnPath(): Promise<string | null> {
-	const result =
-		process.platform === "win32"
-			? await runCommand("where", ["bash.exe"], 5000)
-			: await runCommand("which", ["bash"], 5000);
+	const result = await runCommand("which", ["bash"], 5000);
 	if (result.status !== 0 || !result.stdout) return null;
 	const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
 	return firstMatch && (await pathExists(firstMatch)) ? firstMatch : null;
@@ -190,13 +187,8 @@ interface ShellConfig {
 	commandTransport?: "argv" | "stdin";
 }
 
-function isLegacyWslBashPath(path: string): boolean {
-	const normalized = path.replace(/\//g, "\\").toLowerCase();
-	return /^[a-z]:\\windows\\(?:system32|sysnative)\\bash\.exe$/.test(normalized);
-}
-
 function getBashShellConfig(shell: string): ShellConfig {
-	return isLegacyWslBashPath(shell) ? { shell, args: ["-s"], commandTransport: "stdin" } : { shell, args: ["-c"] };
+	return { shell, args: ["-c"] };
 }
 
 async function getShellConfig(customShellPath?: string): Promise<Result<ShellConfig, ExecutionError>> {
@@ -205,32 +197,6 @@ async function getShellConfig(customShellPath?: string): Promise<Result<ShellCon
 			return ok(getBashShellConfig(customShellPath));
 		}
 		return err(new ExecutionError("shell_unavailable", `Custom shell path not found: ${customShellPath}`));
-	}
-	if (process.platform === "win32") {
-		const candidates: string[] = [];
-		const programFiles = process.env.ProgramFiles;
-		if (programFiles) candidates.push(`${programFiles}\\Git\\bin\\bash.exe`);
-		const programFilesX86 = process.env["ProgramFiles(x86)"];
-		if (programFilesX86) candidates.push(`${programFilesX86}\\Git\\bin\\bash.exe`);
-		for (const candidate of candidates) {
-			if (await pathExists(candidate)) {
-				return ok(getBashShellConfig(candidate));
-			}
-		}
-		const bashOnPath = await findBashOnPath();
-		if (bashOnPath) {
-			return ok(getBashShellConfig(bashOnPath));
-		}
-		return err(
-			new ExecutionError(
-				"shell_unavailable",
-				`No bash shell found. Options:\n` +
-					`  1. Install Git for Windows: https://git-scm.com/download/win\n` +
-					`  2. Add your bash to PATH (Cygwin, MSYS2, etc.)\n` +
-					"  3. Configure an explicit shellPath\n\n" +
-					`Searched Git Bash in:\n${candidates.map((path) => `  ${path}`).join("\n")}`,
-			),
-		);
 	}
 
 	if (await pathExists("/bin/bash")) {
@@ -257,25 +223,6 @@ function getShellEnv(
 }
 
 function killProcessTree(pid: number): void {
-	if (process.platform === "win32") {
-		try {
-			const child = spawn(
-				join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
-				["/F", "/T", "/PID", String(pid)],
-				{
-					stdio: "ignore",
-					detached: true,
-					windowsHide: true,
-				},
-			);
-			// A failed spawn emits "error" asynchronously; consume it to avoid crashing Node.
-			child.once("error", () => {});
-		} catch {
-			// Ignore errors.
-		}
-		return;
-	}
-
 	try {
 		process.kill(-pid, "SIGKILL");
 	} catch {
@@ -528,10 +475,9 @@ export class NodeExecutionEnv implements ExecutionEnv {
 					commandFromStdin ? shellConfig.value.args : [...shellConfig.value.args, command],
 					{
 						cwd,
-						detached: process.platform !== "win32",
+						detached: true,
 						env: getShellEnv(this.shellEnv, options?.env, options?.inheritEnv),
 						stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
-						windowsHide: true,
 					},
 				);
 				if (child.pid) this.activeChildPids.add(child.pid);

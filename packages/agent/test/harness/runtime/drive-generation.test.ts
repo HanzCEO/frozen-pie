@@ -9,7 +9,6 @@ import {
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, WatchHandle } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT, type Context } from "../../../src/harness/context.ts";
 import { HookRegistry } from "../../../src/harness/hooks.ts";
 import { runCheckpoint, startRun } from "../../../src/harness/runtime/drive/checkpoint.ts";
@@ -114,7 +113,6 @@ async function createFixture(backend: MemoryStorage = new MemoryStorage({ now: (
 		resources: {},
 		streamOptions: {},
 		retryPolicy: { enabled: true, maxRetries: 3, baseDelayMs: 1 },
-		compaction: DEFAULT_COMPACTION_SETTINGS,
 		steeringMode: "all",
 		followUpMode: "all",
 		toolExecution: "parallel",
@@ -218,7 +216,6 @@ describe("runtime generation checkpoint", () => {
 			configuration: fixture.lane.state.configuration,
 			streamOptions: {},
 			retryPolicy: { maxAttempts: 4, baseDelayMs: 1 },
-			overflowRecoveryUsed: false,
 		});
 		await expectProjectionRestores(fixture);
 	});
@@ -270,7 +267,6 @@ describe("runtime generation checkpoint", () => {
 		expect(fixture.lane.state.tipId).toBe(customId);
 		expect(routed.generationContext).toMatchObject({
 			triggerEntryId: messageId,
-			overflowRecoveryUsed: false,
 		});
 		expect(fixture.lane.state.inbox).toEqual([]);
 		await expectProjectionRestores(fixture);

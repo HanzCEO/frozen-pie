@@ -10,17 +10,6 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 
-export interface CompactionSettings {
-	enabled?: boolean; // default: true
-	reserveTokens?: number; // default: 16384
-	keepRecentTokens?: number; // default: 20000
-}
-
-export interface BranchSummarySettings {
-	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
-	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
-}
-
 export interface ProviderRetrySettings {
 	timeoutMs?: number; // SDK/provider request timeout in milliseconds
 	maxRetries?: number; // SDK/provider retry attempts
@@ -101,12 +90,9 @@ export interface Settings {
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
-	compaction?: CompactionSettings;
-	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	showCacheMissNotices?: boolean; // default: false - show cache cost and provider recovery notices
-	externalEditor?: string; // Command for Ctrl+G external editor; takes precedence over VISUAL/EDITOR
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows); supports leading ~ expansion
 	quietStartup?: boolean;
 	defaultProjectTrust?: DefaultProjectTrust; // default: "ask"; global setting only
@@ -826,46 +812,6 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getCompactionEnabled(): boolean {
-		return this.settings.compaction?.enabled ?? true;
-	}
-
-	setCompactionEnabled(enabled: boolean): void {
-		if (!this.globalSettings.compaction) {
-			this.globalSettings.compaction = {};
-		}
-		this.globalSettings.compaction.enabled = enabled;
-		this.markModified("compaction", "enabled");
-		this.save();
-	}
-
-	getCompactionReserveTokens(): number {
-		return this.settings.compaction?.reserveTokens ?? 16384;
-	}
-
-	getCompactionKeepRecentTokens(): number {
-		return this.settings.compaction?.keepRecentTokens ?? 20000;
-	}
-
-	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
-		return {
-			enabled: this.getCompactionEnabled(),
-			reserveTokens: this.getCompactionReserveTokens(),
-			keepRecentTokens: this.getCompactionKeepRecentTokens(),
-		};
-	}
-
-	getBranchSummarySettings(): { reserveTokens: number; skipPrompt: boolean } {
-		return {
-			reserveTokens: this.settings.branchSummary?.reserveTokens ?? 16384,
-			skipPrompt: this.settings.branchSummary?.skipPrompt ?? false,
-		};
-	}
-
-	getBranchSummarySkipPrompt(): boolean {
-		return this.settings.branchSummary?.skipPrompt ?? false;
-	}
-
 	getRetryEnabled(): boolean {
 		return this.settings.retry?.enabled ?? true;
 	}
@@ -918,18 +864,6 @@ export class SettingsManager {
 
 	getShowCacheMissNotices(): boolean {
 		return this.settings.showCacheMissNotices ?? false;
-	}
-
-	getExternalEditorCommand(): string {
-		const configuredEditor = this.settings.externalEditor;
-		if (typeof configuredEditor === "string" && configuredEditor.trim() !== "") {
-			return configuredEditor;
-		}
-		const environmentEditor = process.env.VISUAL || process.env.EDITOR;
-		if (environmentEditor) {
-			return environmentEditor;
-		}
-		return process.platform === "win32" ? "notepad" : "nano";
 	}
 
 	setHideThinkingBlock(hide: boolean): void {

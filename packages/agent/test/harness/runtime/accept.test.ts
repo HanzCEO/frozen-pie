@@ -1,7 +1,6 @@
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type HarnessEvent, HarnessFault, type OperationRequest } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT, createContextKey, withContextValue } from "../../../src/harness/context.ts";
 import type { Result } from "../../../src/harness/result.ts";
 import { createAgentHarness, Harness } from "../../../src/harness/runtime/harness.ts";
@@ -123,7 +122,6 @@ describe("runtime atomic run acceptance", () => {
 		expect(admission).toMatchObject({ operationId: operation.meta.operationId, kind: "run" });
 		expect(entry).toMatchObject({ type: "message", message: { role: "user", content: expectedContent } });
 		expect(operation.state.settings).toEqual({
-			compaction: DEFAULT_COMPACTION_SETTINGS,
 			steeringMode: "all",
 			followUpMode: "all",
 			toolExecution: "parallel",
@@ -368,51 +366,8 @@ describe("runtime atomic run acceptance", () => {
 		});
 	});
 
-	it("accepts standalone compaction with durable preparation and no execution", async () => {
-		const { harness, lane, session, storage } = await createHarness();
-		await lane.appendMessage({ role: "user", content: "history", timestamp: 1 }, BACKGROUND_CONTEXT);
-		storage.clearCommitAttempts();
-		const starts = vi.fn();
-		harness.events.on("compaction_start", starts);
-
-		const admission = unwrap(
-			await lane.accept(
-				{ kind: "compaction", operationId: "compaction", customInstructions: "focus" },
-				BACKGROUND_CONTEXT,
-			),
-		);
-
-		expect(admission).toEqual({ operationId: "compaction", kind: "compaction", startedAt: expect.any(Number) });
-		const operation = lane.state.operation;
-		if (operation?.state.at !== "summary.deciding") throw new Error("Expected accepted compaction");
-		expect(operation.state.task).toMatchObject({
-			reason: "manual",
-			customInstructions: "focus",
-			boundary: { kind: "finish" },
-		});
-		expect(
-			await session.getValue(
-				storedValues.operationPreparation("compaction", operation.state.task.taskId),
-				BACKGROUND_CONTEXT,
-			),
-		).toMatchObject({ value: { kind: "compaction" } });
-		expect(storage.getCommitAttempts()).toHaveLength(1);
-		expect(starts).toHaveBeenCalledTimes(1);
-		expect(lane.activeDrive).toBeUndefined();
-	});
-
-	it("rejects empty standalone compaction without writing", async () => {
-		const { lane, storage } = await createHarness();
-
-		expect(await lane.accept({ kind: "compaction" }, BACKGROUND_CONTEXT)).toMatchObject({
-			ok: false,
-			error: { _tag: "NothingToCompact" },
-		});
-		expect(storage.getCommitAttempts()).toEqual([]);
-	});
-
-	it.each([false, true])("accepts %s summarized navigation atomically", async (summarize) => {
-		const { harness, lane, session, storage } = await createHarness(async (source) => {
+	it("accepts navigation atomically", async () => {
+		const { harness, lane, storage } = await createHarness(async (source) => {
 			await source.mutate(
 				(mutator) =>
 					mutator.commit(
@@ -459,9 +414,9 @@ describe("runtime atomic run acceptance", () => {
 			await lane.accept(
 				{
 					kind: "navigation",
-					operationId: summarize ? "summarized" : "direct",
+					operationId: "direct",
 					targetId: "target",
-					options: { summarize, label: "chosen", customInstructions: "focus" },
+					options: { label: "chosen" },
 				},
 				BACKGROUND_CONTEXT,
 			),
@@ -469,17 +424,8 @@ describe("runtime atomic run acceptance", () => {
 
 		const operation = lane.state.operation;
 		if (operation === null) throw new Error("Expected accepted navigation");
-		expect(operation.state.at).toBe(summarize ? "summary.deciding" : "navigation.ready_to_commit");
+		expect(operation.state.at).toBe("navigation.ready_to_commit");
 		expect(lane.state.tipId).toBe("source");
-		if (summarize) {
-			if (operation.state.at !== "summary.deciding") throw new Error("Expected summary decision");
-			expect(
-				await session.getValue(
-					storedValues.operationPreparation(operation.meta.operationId, operation.state.task.taskId),
-					BACKGROUND_CONTEXT,
-				),
-			).toMatchObject({ value: { kind: "branch_summary", messages: [{ content: "source" }] } });
-		}
 		expect(storage.getCommitAttempts()).toHaveLength(1);
 		expect(starts).toHaveBeenCalledTimes(1);
 		expect(lane.activeDrive).toBeUndefined();

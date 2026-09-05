@@ -931,7 +931,6 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return;
 		}
 
-		if (this.handleRightClickPaste(raw)) return;
 		this.handleSelectionMouseEvent(raw);
 	}
 
@@ -987,24 +986,6 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			y: Number.parseInt(match[3], 10) - 1,
 			release: match[4] === "m",
 		};
-	}
-
-	private handleRightClickPaste(event: SgrMouseEvent): boolean {
-		if (
-			!this.onRightClickPaste ||
-			process.platform !== "win32" ||
-			process.env.TERM_PROGRAM?.toLowerCase() === "vscode" ||
-			event.release ||
-			event.button !== 2
-		) {
-			return false;
-		}
-		try {
-			this.onRightClickPaste();
-		} catch {
-			// Clipboard paste is best-effort.
-		}
-		return true;
 	}
 
 	private handleScrollToEndIndicatorMouseEvent(event: SgrMouseEvent): boolean {

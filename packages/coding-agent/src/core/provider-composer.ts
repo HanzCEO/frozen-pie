@@ -10,9 +10,6 @@ import {
 	lazyStream,
 	type Model,
 	type ModelAuth,
-	type OAuthAuth,
-	type OAuthCredentials,
-	type OAuthLoginCallbacks,
 	type Provider,
 	type ProviderHeaders,
 	type RefreshModelsContext,
@@ -30,18 +27,6 @@ import {
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.ts";
 
-export interface ExtensionOAuthConfig {
-	name: string;
-	/** Whether access through this auth method is backed by a provider subscription. */
-	isSubscription?: boolean;
-	/** @deprecated Retained for extension source compatibility; ignored by canonical auth flows. */
-	usesCallbackServer?: boolean;
-	login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
-	refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials>;
-	getApiKey(credentials: OAuthCredentials): string;
-	modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
-}
-
 /** Input type for the extension registerProvider API. */
 export interface ProviderConfigInput {
 	name?: string;
@@ -51,7 +36,6 @@ export interface ProviderConfigInput {
 	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
 	authHeader?: boolean;
-	oauth?: ExtensionOAuthConfig;
 	models?: Array<{
 		id: string;
 		name: string;
@@ -180,9 +164,6 @@ function applyModelsJson(
 	config: ModelsJsonProvider | undefined,
 ): Model<Api>[] {
 	if (!config) return [...baseModels];
-	if (config.oauth && !config.baseUrl) {
-		throw new Error(`Provider ${providerId}: "baseUrl" is required when "oauth" is set.`);
-	}
 	const hasOverrides = config.modelOverrides && Object.keys(config.modelOverrides).length > 0;
 	if (
 		!config.models?.length &&
@@ -191,7 +172,6 @@ function applyModelsJson(
 		!config.compat &&
 		!hasOverrides &&
 		!config.apiKey &&
-		!config.oauth &&
 		config.authHeader === undefined
 	) {
 		throw new Error(
@@ -201,7 +181,7 @@ function applyModelsJson(
 
 	const models: Model<Api>[] = baseModels.map((model) => ({
 		...model,
-		baseUrl: config.oauth === "radius" ? model.baseUrl : (config.baseUrl ?? model.baseUrl),
+		baseUrl: config.baseUrl ?? model.baseUrl,
 		compat: mergeCompat(model.compat, config.compat),
 	}));
 	for (const definition of config.models ?? []) {
@@ -241,27 +221,6 @@ function applyExtension(
 			headers: undefined,
 		};
 	});
-}
-
-function adaptOAuth(config: ExtensionOAuthConfig): OAuthAuth {
-	return {
-		name: config.name,
-		isSubscription: config.isSubscription,
-		login: async (callbacks) => {
-			const credential = await config.login({
-				onAuth: (info) => callbacks.notify({ type: "auth_url", ...info }),
-				onDeviceCode: (info) => callbacks.notify({ type: "device_code", ...info }),
-				onPrompt: (prompt) => callbacks.prompt({ type: "text", ...prompt }),
-				onProgress: (message) => callbacks.notify({ type: "progress", message }),
-				onManualCodeInput: () => callbacks.prompt({ type: "manual_code", message: "Paste the authorization code" }),
-				onSelect: (prompt) => callbacks.prompt({ type: "select", ...prompt }),
-				signal: callbacks.signal,
-			});
-			return { ...credential, type: "oauth" };
-		},
-		refresh: async (credential, signal) => ({ ...(await config.refreshToken(credential, signal)), type: "oauth" }),
-		toAuth: async (credential) => ({ apiKey: config.getApiKey(credential) }),
-	};
 }
 
 function withConfiguredAuth(
@@ -315,9 +274,7 @@ function composeApiKeyAuth(
 ): ApiKeyAuth | undefined {
 	const inherited = base?.auth.apiKey;
 	const rawKey = configuredApiKey(config, extension);
-	const oauth = extension?.oauth ?? base?.auth.oauth;
-	// OAuth-only providers get no fabricated API-key login method.
-	if (!inherited && rawKey === undefined && oauth) return undefined;
+	if (!inherited && rawKey === undefined && !extension && !config) return undefined;
 	const rawHeaders = configuredHeaders(config, extension);
 	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
 	return {
@@ -373,31 +330,6 @@ function composeApiKeyAuth(
 	};
 }
 
-function composeOAuthAuth(
-	providerId: string,
-	base: Provider | undefined,
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): OAuthAuth | undefined {
-	const oauth = extension?.oauth ? adaptOAuth(extension.oauth) : base?.auth.oauth;
-	if (!oauth) return undefined;
-	const rawHeaders = configuredHeaders(config, extension);
-	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
-	return {
-		...oauth,
-		toAuth: async (credential) => {
-			const auth = await oauth.toAuth(credential);
-			const env = credential.env;
-			const headers = resolveHeadersOrThrow(
-				rawHeaders,
-				`provider "${providerId}"`,
-				typeof env === "object" && env !== null ? (env as Record<string, string>) : undefined,
-			);
-			return withConfiguredAuth(auth, headers, authHeader);
-		},
-	};
-}
-
 function rawModelHeaders(
 	model: Model<Api>,
 	config: ModelsJsonProvider | undefined,
@@ -433,21 +365,17 @@ export function composeModelProvider(
 	extension: ProviderConfigInput | undefined,
 ): Provider {
 	const config = modelConfig.getProvider(providerId);
-	let extensionOAuthCredential: OAuthCredentials | undefined;
 	let refreshedExtensionModels: ProviderConfigInput["models"];
 	const currentExtension = (): ProviderConfigInput | undefined =>
 		extension && refreshedExtensionModels ? { ...extension, models: refreshedExtensionModels } : extension;
 	// models.json modelOverrides are the topmost user-config layer: they apply once,
-	// after custom-model upserts, extension model replacement, and legacy OAuth projection.
+	// after custom-model upserts and extension model replacement.
 	const getModels = () => {
-		let models = applyExtension(
+		const models = applyExtension(
 			providerId,
 			applyModelsJson(providerId, base?.getModels() ?? [], config),
 			currentExtension(),
 		);
-		if (extensionOAuthCredential && extension?.oauth?.modifyModels) {
-			models = extension.oauth.modifyModels(models, extensionOAuthCredential);
-		}
 		return models.map((model) => {
 			const override = config?.modelOverrides?.[model.id];
 			return override ? applyModelOverride(model, override) : model;
@@ -456,8 +384,7 @@ export function composeModelProvider(
 	// Validate eagerly so registration/reload reports structural errors immediately.
 	getModels();
 	const apiKey = composeApiKeyAuth(providerId, base, config, extension);
-	const oauth = composeOAuthAuth(providerId, base, config, extension);
-	if (!apiKey && !oauth) throw new Error(`Provider ${providerId}: no authentication method configured.`);
+	if (!apiKey) throw new Error(`Provider ${providerId}: no authentication method configured.`);
 
 	const supportsBaseApi = (model: Model<Api>) => base?.getModels().some((entry) => entry.api === model.api) ?? false;
 	const streamWith = (
@@ -484,19 +411,18 @@ export function composeModelProvider(
 
 	const provider: Provider = {
 		id: providerId,
-		name: extension?.name ?? config?.name ?? base?.name ?? extension?.oauth?.name ?? providerId,
+		name: extension?.name ?? config?.name ?? base?.name ?? providerId,
 		baseUrl: extension?.baseUrl ?? config?.baseUrl ?? base?.baseUrl,
 		headers: base?.headers,
-		auth: { ...(apiKey ? { apiKey } : {}), ...(oauth ? { oauth } : {}) },
+		auth: { apiKey },
 		getModels,
 		refreshModels:
-			base?.refreshModels || extension?.refreshModels || extension?.oauth?.modifyModels
+			base?.refreshModels || extension?.refreshModels
 				? async (context) => {
 						await base?.refreshModels?.(context);
 						let refreshed: NonNullable<ProviderConfigInput["models"]> | undefined;
 						if (extension?.refreshModels) refreshed = await extension.refreshModels(context);
 						if (context.signal.aborted) return;
-						const oauthCredential = context.credential?.type === "oauth" ? context.credential : undefined;
 						await context.publish({
 							update: () => {
 								if (refreshed) {
@@ -507,7 +433,6 @@ export function composeModelProvider(
 									});
 									refreshedExtensionModels = refreshed;
 								}
-								extensionOAuthCredential = oauthCredential;
 							},
 						});
 					}

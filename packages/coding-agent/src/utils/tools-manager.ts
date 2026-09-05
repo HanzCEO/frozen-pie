@@ -40,9 +40,6 @@ const TOOLS: Record<string, ToolConfig> = {
 			} else if (plat === "linux") {
 				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
 				return `fd-v${version}-${archStr}-unknown-linux-musl.tar.gz`;
-			} else if (plat === "win32") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `fd-v${version}-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -59,9 +56,6 @@ const TOOLS: Record<string, ToolConfig> = {
 			} else if (plat === "linux") {
 				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
 				return `ripgrep-${version}-${archStr}-unknown-linux-musl.tar.gz`;
-			} else if (plat === "win32") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `ripgrep-${version}-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -85,7 +79,7 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 	if (!config) return null;
 
 	// Check our tools directory first
-	const localPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));
+	const localPath = join(TOOLS_DIR, config.binaryName);
 	if (existsSync(localPath)) {
 		return localPath;
 	}
@@ -205,51 +199,16 @@ function extractTarGzArchive(archivePath: string, extractDir: string, assetName:
 	}
 }
 
-function getWindowsTarCommand(): string {
-	const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
-	if (systemRoot) {
-		const systemTar = join(systemRoot, "System32", "tar.exe");
-		if (existsSync(systemTar)) {
-			return systemTar;
-		}
-	}
-	return "tar.exe";
-}
-
 function extractZipArchive(archivePath: string, extractDir: string, assetName: string): void {
 	const failures: string[] = [];
 
-	if (platform() === "win32") {
-		// Windows ships bsdtar as tar.exe, which supports zip files. Prefer the
-		// System32 binary over Git Bash's GNU tar, which does not handle zip archives.
-		const tarFailure = runExtractionCommand(getWindowsTarCommand(), ["xf", archivePath, "-C", extractDir]);
-		if (!tarFailure) return;
-		failures.push(tarFailure);
+	const unzipFailure = runExtractionCommand("unzip", ["-q", archivePath, "-d", extractDir]);
+	if (!unzipFailure) return;
+	failures.push(unzipFailure);
 
-		const script =
-			"& { param($archive, $destination) $ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force }";
-		const powershellFailure = runExtractionCommand("powershell.exe", [
-			"-NoLogo",
-			"-NoProfile",
-			"-NonInteractive",
-			"-ExecutionPolicy",
-			"Bypass",
-			"-Command",
-			script,
-			archivePath,
-			extractDir,
-		]);
-		if (!powershellFailure) return;
-		failures.push(powershellFailure);
-	} else {
-		const unzipFailure = runExtractionCommand("unzip", ["-q", archivePath, "-d", extractDir]);
-		if (!unzipFailure) return;
-		failures.push(unzipFailure);
-
-		const tarFailure = runExtractionCommand("tar", ["xf", archivePath, "-C", extractDir]);
-		if (!tarFailure) return;
-		failures.push(tarFailure);
-	}
+	const tarFailure = runExtractionCommand("tar", ["xf", archivePath, "-C", extractDir]);
+	if (!tarFailure) return;
+	failures.push(tarFailure);
 
 	throw new Error(`Failed to extract ${assetName}: ${failures.join("; ")}`);
 }
@@ -277,7 +236,7 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 
 	const downloadUrl = `https://github.com/${config.repo}/releases/download/${config.tagPrefix}${version}/${assetName}`;
 	const archivePath = join(TOOLS_DIR, assetName);
-	const binaryExt = plat === "win32" ? ".exe" : "";
+	const binaryExt = "";
 	const binaryPath = join(TOOLS_DIR, config.binaryName + binaryExt);
 
 	// Download
@@ -317,10 +276,8 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 			throw new Error(`Binary not found in archive: expected ${binaryFileName} under ${extractDir}`);
 		}
 
-		// Make executable (Unix only)
-		if (plat !== "win32") {
-			chmodSync(binaryPath, 0o755);
-		}
+		// Make executable
+		chmodSync(binaryPath, 0o755);
 	} finally {
 		// Cleanup
 		rmSync(archivePath, { force: true });
@@ -329,12 +286,6 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 
 	return binaryPath;
 }
-
-// Termux package names for tools
-const TERMUX_PACKAGES: Record<string, string> = {
-	fd: "fd",
-	rg: "ripgrep",
-};
 
 export interface ToolStatus {
 	type: "info" | "warning";
@@ -360,14 +311,6 @@ export async function ensureTool(
 
 	if (isOfflineModeEnabled()) {
 		onStatus?.({ type: "warning", message: `${config.name} not found. Offline mode enabled, skipping download.` });
-		return undefined;
-	}
-
-	// On Android/Termux, Linux binaries don't work due to Bionic libc incompatibility.
-	// Users must install via pkg.
-	if (platform() === "android") {
-		const pkgName = TERMUX_PACKAGES[tool] ?? tool;
-		onStatus?.({ type: "warning", message: `${config.name} not found. Install with: pkg install ${pkgName}` });
 		return undefined;
 	}
 

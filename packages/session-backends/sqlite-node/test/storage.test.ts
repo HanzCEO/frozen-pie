@@ -220,7 +220,7 @@ describe("SqliteStorage", () => {
 		});
 	});
 
-	it("bases divergent branch segments at the newest compaction", async () => {
+	it("copies full prefix for divergent branch segments", async () => {
 		await withStorage(async (storage, db) => {
 			insertCommitSessionRow(db);
 			await storage.commit(
@@ -232,17 +232,15 @@ describe("SqliteStorage", () => {
 						message: { role: "user", content: "root", timestamp: 10 },
 					}),
 					sessionWrites.insertEntry({
-						id: "compact",
+						id: "marker",
 						parentId: "root",
-						type: "compaction",
-						summary: "summary",
-						retainedTail: [],
-						tokensBefore: 1,
-						fromHook: false,
+						type: "custom",
+						customType: "marker",
+						data: { summary: "summary" },
 					}),
 					sessionWrites.insertEntry({
 						id: "left",
-						parentId: "compact",
+						parentId: "marker",
 						type: "message",
 						message: { role: "user", content: "left", timestamp: 11 },
 					}),
@@ -270,21 +268,13 @@ describe("SqliteStorage", () => {
 				branch_id: "right",
 				tip_entry_id: "right",
 				tip_seq: 5,
-				base_branch_id: "root",
-				base_seq: 2,
+				base_branch_id: null,
+				base_seq: null,
 			});
-			expect(
-				sql`SELECT branch_id, entry_id, entry_seq, entry_type FROM branch_entries WHERE branch_id = ${"right"} ORDER BY entry_seq`.all(
-					db,
-				),
-			).toEqual([
-				{ branch_id: "right", entry_id: "left", entry_seq: 3, entry_type: "message" },
-				{ branch_id: "right", entry_id: "right", entry_seq: 5, entry_type: "message" },
-			]);
 			expect((await storage.scanBranch({ start: "right" }, BACKGROUND_CONTEXT)).map((entry) => entry.id)).toEqual([
 				"right",
 				"left",
-				"compact",
+				"marker",
 				"root",
 			]);
 		});
@@ -348,13 +338,13 @@ describe("SqliteStorage", () => {
 			sql`INSERT INTO branch_entries (session_id, branch_id, entry_id, entry_seq, entry_type)
 				VALUES
 					(${SESSION_ID}, ${"base"}, ${"root"}, ${1}, ${"message"}),
-					(${SESSION_ID}, ${"base"}, ${"compact"}, ${2}, ${"compaction"}),
+					(${SESSION_ID}, ${"base"}, ${"compact"}, ${2}, ${"custom"}),
 					(${SESSION_ID}, ${"new"}, ${"old"}, ${3}, ${"message"}),
 					(${SESSION_ID}, ${"new"}, ${"custom"}, ${4}, ${"custom"}),
 					(${SESSION_ID}, ${"new"}, ${"leaf"}, ${5}, ${"message"})`.run(db);
 
 			expect(
-				(await storage.scanBranch({ start: "leaf", stopAtType: "compaction", limit: 2 }, BACKGROUND_CONTEXT)).map(
+				(await storage.scanBranch({ start: "leaf", stopAtType: "custom", limit: 2 }, BACKGROUND_CONTEXT)).map(
 					(entry) => entry.id,
 				),
 			).toEqual(["leaf", "custom"]);
@@ -413,22 +403,19 @@ describe("SqliteStorage", () => {
 			sql`INSERT INTO branch_entries (session_id, branch_id, entry_id, entry_seq, entry_type)
 				VALUES
 					(${SESSION_ID}, ${"base"}, ${"root"}, ${1}, ${"message"}),
-					(${SESSION_ID}, ${"base"}, ${"compact"}, ${2}, ${"compaction"}),
+					(${SESSION_ID}, ${"base"}, ${"compact"}, ${2}, ${"custom"}),
 					(${SESSION_ID}, ${"new"}, ${"after"}, ${3}, ${"message"}),
 					(${SESSION_ID}, ${"new"}, ${"leaf"}, ${4}, ${"custom"})`.run(db);
 
 			expect(
-				(await storage.scanBranch({ start: "leaf", stopAtType: "compaction" }, BACKGROUND_CONTEXT)).map(
+				(await storage.scanBranch({ start: "leaf", stopAtId: "compact" }, BACKGROUND_CONTEXT)).map(
 					(entry) => entry.id,
 				),
 			).toEqual(["leaf", "after", "compact"]);
 			expect(
-				(
-					await storage.scanBranch(
-						{ start: "leaf", stopAtType: "compaction", type: "message" },
-						BACKGROUND_CONTEXT,
-					)
-				).map((entry) => entry.id),
+				(await storage.scanBranch({ start: "leaf", stopAtId: "compact", type: "message" }, BACKGROUND_CONTEXT)).map(
+					(entry) => entry.id,
+				),
 			).toEqual(["after"]);
 		});
 	});

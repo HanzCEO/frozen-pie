@@ -121,7 +121,6 @@ function rebuildBashResultRenderComponent(
 	}
 }
 
-/** Shell renderers are shared by bash and powershell, which differ only in the prompt they display. */
 export function createShellRenderers(prompt: string): Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> {
 	return {
 		renderCall(args, _theme, context) {

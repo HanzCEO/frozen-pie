@@ -1,7 +1,6 @@
 import { type Api, createModels, fauxProvider, type Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { HarnessClosed, type HarnessEvent } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT, type Context } from "../../../src/harness/context.ts";
 import { HarnessEventBus } from "../../../src/harness/events.ts";
 import { HookRegistry } from "../../../src/harness/hooks.ts";
@@ -73,7 +72,6 @@ async function createLane(
 				resources: {},
 				streamOptions: {},
 				retryPolicy: { enabled: true, maxRetries: 3, baseDelayMs: 1_000 },
-				compaction: DEFAULT_COMPACTION_SETTINGS,
 				steeringMode: "all",
 				followUpMode: "all",
 				toolExecution: "parallel",

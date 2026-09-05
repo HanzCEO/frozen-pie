@@ -1,7 +1,6 @@
 import { type AssistantMessageFrame, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type HarnessEvent, HarnessFault, type WatchHandle } from "../../../src/harness/agent-harness.ts";
-import { DEFAULT_COMPACTION_SETTINGS } from "../../../src/harness/compaction/compaction.ts";
 import { BACKGROUND_CONTEXT, type Context, createContextKey, withContextValue } from "../../../src/harness/context.ts";
 import { createAgentHarness, Harness } from "../../../src/harness/runtime/harness.ts";
 import { Lane } from "../../../src/harness/runtime/lane.ts";
@@ -59,7 +58,6 @@ function runScope(control: OperationScope["control"] = { status: "running" }): O
 	return {
 		control,
 		settings: {
-			compaction: DEFAULT_COMPACTION_SETTINGS,
 			steeringMode: "all",
 			followUpMode: "all",
 			toolExecution: "parallel",
@@ -107,11 +105,9 @@ describe("runtime lane watch", () => {
 			sessionWrites.insertEntry({
 				id: "compact",
 				parentId: "root",
-				type: "compaction",
-				summary: "summary",
-				retainedTail: [],
-				tokensBefore: 10,
-				fromHook: false,
+				type: "custom",
+				customType: "compact",
+				data: { summary: "summary" },
 			}),
 			sessionWrites.insertEntry({
 				id: "after",
@@ -124,7 +120,7 @@ describe("runtime lane watch", () => {
 		const harness = await attach(session);
 
 		const first = await harness.watch(BACKGROUND_CONTEXT);
-		expect(first.snapshot.transcript.map(({ id }) => id)).toEqual(["compact", "after"]);
+		expect(first.snapshot.transcript.map(({ id }) => id)).toEqual(["root", "compact", "after"]);
 		expect(first.snapshot).toMatchObject({
 			lane: "main",
 			tipId: "after",
@@ -137,7 +133,7 @@ describe("runtime lane watch", () => {
 		first.snapshot.transcript.length = 0;
 		first.snapshot.tipId = null;
 		const second = await harness.watch(BACKGROUND_CONTEXT);
-		expect(second.snapshot.transcript.map(({ id }) => id)).toEqual(["compact", "after"]);
+		expect(second.snapshot.transcript.map(({ id }) => id)).toEqual(["root", "compact", "after"]);
 		expect(second.snapshot.tipId).toBe("after");
 		first.unsubscribe();
 		second.unsubscribe();
@@ -235,7 +231,6 @@ describe("runtime lane watch", () => {
 					configuration,
 					streamOptions: {},
 					retryPolicy: { maxAttempts: 2, baseDelayMs: 0 },
-					overflowRecoveryUsed: false,
 				},
 				attempt: 1,
 				responseEntryId: "response-without-frames",
@@ -283,7 +278,6 @@ describe("runtime lane watch", () => {
 					configuration,
 					streamOptions: {},
 					retryPolicy: { maxAttempts: 2, baseDelayMs: 0 },
-					overflowRecoveryUsed: false,
 				},
 				attempt: 1,
 				responseEntryId: "response",

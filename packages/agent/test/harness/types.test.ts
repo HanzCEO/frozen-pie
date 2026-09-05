@@ -82,16 +82,15 @@ const generationContext = {
 	configuration,
 	streamOptions: { deferred: { window: "1h" } },
 	retryPolicy,
-	overflowRecoveryUsed: false,
 } satisfies GenerationContext;
-const summaryContext = {
+const _summaryContext = {
 	resultEntryId: "summary",
 	configuration,
 	streamOptions: {},
 	retryPolicy,
 } satisfies SummaryContext;
 const checkpoint = {
-	continuation: { kind: "need_assistant", overflowRecoveryUsed: false },
+	continuation: { kind: "need_assistant" },
 	triggerEntryId: "trigger",
 } satisfies CheckpointData;
 
@@ -106,7 +105,6 @@ const toolCalls = [
 const runScope = {
 	control: runningControl,
 	settings: {
-		compaction: { enabled: true, reserveTokens: 1000, keepRecentTokens: 2000 },
 		steeringMode: "all",
 		followUpMode: "one-at-a-time",
 		toolExecution: "parallel",
@@ -163,39 +161,6 @@ const operationStates = [
 		configuration,
 		streamOptions: {},
 	},
-	{
-		...runScope,
-		at: "summary.deciding",
-		task: { taskId: "task", reason: "threshold", boundary: { kind: "resume_checkpoint", resumeAfter: checkpoint } },
-	},
-	{
-		...runScope,
-		at: "summary.ready",
-		task: { taskId: "task", reason: "manual", customInstructions: "compact", boundary: { kind: "finish" } },
-		summaryContext,
-		nextAttempt: 1,
-	},
-	{
-		...runScope,
-		at: "summary.effect_pending",
-		task: {
-			taskId: "task",
-			boundary: { kind: "commit_navigation", targetId: "target", label: "target" },
-		},
-		summaryContext,
-		attempt: 1,
-		request: { index: 0, usageId: "usage" },
-		usageIds: [],
-	},
-	{
-		...runScope,
-		at: "summary.retry_wait",
-		task: { taskId: "task", reason: "overflow", boundary: { kind: "resume_checkpoint", resumeAfter: checkpoint } },
-		summaryContext,
-		nextAttempt: 2,
-		notBefore: 10,
-		errorMessage: "retry",
-	},
 	{ ...runScope, at: "navigation.ready_to_commit", targetId: null },
 ] satisfies OperationState[];
 const operations = [
@@ -205,13 +170,6 @@ const operations = [
 		sourceTipId: null,
 		startedAt: 1,
 		intent: { kind: "run", promptEntryIds: ["prompt"] },
-	},
-	{
-		operationId: "compaction",
-		lane: "main",
-		sourceTipId: "source",
-		startedAt: 2,
-		intent: { kind: "compaction", customInstructions: "compact" },
 	},
 	{
 		operationId: "navigation",
@@ -244,14 +202,9 @@ const valueWrites: ValueSetWrite[] = [
 	storedValues.setValue(storedValues.operationState("run"), runState),
 	storedValues.setValue(storedValues.operationToolArgs("run", "step", 0), { path: "file" }),
 	storedValues.setValue(storedValues.operationPreparation("run", "task"), {
-		kind: "compaction",
-		messagesToSummarize: [],
-		turnPrefixMessages: [],
-		retainedTail: [],
-		isSplitTurn: false,
-		tokensBefore: 100,
+		kind: "branch_summary",
 		fileOps: { read: [], written: [], edited: [] },
-		settings: { enabled: true, reserveTokens: 1000, keepRecentTokens: 2000 },
+		totalTokens: 100,
 	}),
 	storedValues.setValue(storedValues.pendingEntry("pending"), {
 		type: "custom",
@@ -306,7 +259,7 @@ it("covers the complete durable storage and Part 3 discriminants", () => {
 	expectTypeOf(storedValues.pendingAssistantFrames("operation", "response")).toEqualTypeOf<
 		storedValues.ValueList<AssistantMessageFrame>
 	>();
-	expectTypeOf<OperationMeta["intent"]["kind"]>().toEqualTypeOf<"run" | "compaction" | "navigation">();
+	expectTypeOf<OperationMeta["intent"]["kind"]>().toEqualTypeOf<"run" | "navigation">();
 	expectTypeOf<Control["status"]>().toEqualTypeOf<"running" | "cancel_requested">();
 	expectTypeOf<ToolCall["status"]>().toEqualTypeOf<"planned" | "effect_pending" | "outcome_ready" | "completed">();
 	expectTypeOf<OperationAt>().toEqualTypeOf<
@@ -318,23 +271,11 @@ it("covers the complete durable storage and Part 3 discriminants", () => {
 		| "tools"
 		| "deferred.suspended"
 		| "deferred.effect_pending"
-		| "summary.deciding"
-		| "summary.ready"
-		| "summary.effect_pending"
-		| "summary.retry_wait"
-		| "summary.deciding"
-		| "summary.ready"
-		| "summary.effect_pending"
-		| "summary.retry_wait"
 		| "navigation.ready_to_commit"
-		| "summary.deciding"
-		| "summary.ready"
-		| "summary.effect_pending"
-		| "summary.retry_wait"
 	>();
 	expectTypeOf<InboxItem["kind"]>().toEqualTypeOf<"steer" | "followUp" | "nextRun" | "write">();
 	expectTypeOf<TerminalStatus>().toEqualTypeOf<"completed" | "declined" | "aborted" | "failed">();
-	expectTypeOf<NewEntry["type"]>().toEqualTypeOf<"message" | "compaction" | "branch_summary" | "custom">();
+	expectTypeOf<NewEntry["type"]>().toEqualTypeOf<"message" | "custom">();
 	void transaction;
 	void operationStates;
 
@@ -417,8 +358,6 @@ it("covers Part 5 results, events, hooks, snapshots, tools, and stream options",
 		| "queue_update"
 		| "value_update"
 		| "config_update"
-		| "compaction_start"
-		| "compaction_end"
 		| "navigation_start"
 		| "navigation_end"
 		| "lane_created"
@@ -434,8 +373,6 @@ it("covers Part 5 results, events, hooks, snapshots, tools, and stream options",
 		| "after_response"
 		| "before_tool"
 		| "after_tool"
-		| "before_compaction"
-		| "before_navigation"
 	>();
 	expectTypeOf<HookMap["before_drive"]["result"]>().toEqualTypeOf<void>();
 	expectTypeOf<HookHandler<"before_drive">>().returns.toEqualTypeOf<void | Promise<void>>();
@@ -486,9 +423,7 @@ it("covers Part 5 results, events, hooks, snapshots, tools, and stream options",
 			| "mismatch"
 		>
 	>().toEqualTypeOf<never>();
-	expectTypeOf<OperationRequest["kind"]>().toEqualTypeOf<
-		"prompt" | "skill" | "prompt_template" | "compaction" | "navigation"
-	>();
+	expectTypeOf<OperationRequest["kind"]>().toEqualTypeOf<"prompt" | "skill" | "prompt_template" | "navigation">();
 	expectTypeOf<Parameters<AgentHarnessTool<object>["execute"]>[4]>().toEqualTypeOf<AgentHarnessToolInvocation>();
 	expectTypeOf<Parameters<AgentHarnessTool<object>["execute"]>[5]>().toEqualTypeOf<Context>();
 	expectTypeOf<AgentTool["replay"]>().toEqualTypeOf<"never" | "safe" | undefined>();

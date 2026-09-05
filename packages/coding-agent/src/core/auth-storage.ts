@@ -239,14 +239,6 @@ export class ReadOnlyAuthStorage implements CredentialStore {
 						!Array.isArray(value.env) &&
 						Object.values(value.env).every((entry) => typeof entry === "string"));
 				if (validKey && validEnv) continue;
-			} else if (
-				value.type === "oauth" &&
-				typeof value.access === "string" &&
-				typeof value.refresh === "string" &&
-				typeof value.expires === "number" &&
-				Number.isFinite(value.expires)
-			) {
-				continue;
 			}
 			throw new Error(`Invalid auth.json credential for provider "${providerId}"`);
 		}

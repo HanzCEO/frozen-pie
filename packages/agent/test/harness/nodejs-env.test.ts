@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { access, chmod, realpath, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "../../src/harness/context.ts";
@@ -392,52 +392,6 @@ describe("NodeExecutionEnv", () => {
 		}
 	});
 
-	it("uses stdin command transport for legacy WSL bash paths", async () => {
-		if (process.platform === "win32") return;
-		const root = createTempDir();
-		const shellPath = "C:\\Windows\\System32\\bash.exe";
-		const env = new NodeExecutionEnv({ cwd: root });
-		getOrThrow(
-			await env.writeFile(
-				shellPath,
-				'#!/bin/sh\nprintf \'args:%s\\n\' "$*" >&2\nexec /bin/bash "$@"\n',
-				BACKGROUND_CONTEXT,
-			),
-		);
-		await chmod(join(root, shellPath), 0o755);
-
-		const originalCwd = process.cwd();
-		const originalPath = process.env.PATH;
-		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
-		try {
-			process.chdir(root);
-			process.env.PATH = `${root}${delimiter}${originalPath ?? ""}`;
-			Object.defineProperty(process, "platform", {
-				configurable: true,
-				value: "win32",
-			});
-
-			const wslEnv = new NodeExecutionEnv({ cwd: root, shellPath });
-			const nameExpansion = "$" + "{name}";
-			const collected = await collectShellOutput(
-				wslEnv,
-				`name='World'; echo "Hello, ${nameExpansion}!"`,
-				undefined,
-				BACKGROUND_CONTEXT,
-			);
-			const result = getOrThrow(collected.result);
-			expect(collected.output?.text).toContain("Hello, World!");
-			expect(collected.output?.text).toContain("args:-s");
-			expect(result.exitCode).toBe(0);
-		} finally {
-			process.chdir(originalCwd);
-			process.env.PATH = originalPath;
-			if (platformDescriptor) {
-				Object.defineProperty(process, "platform", platformDescriptor);
-			}
-		}
-	});
-
 	it.skipIf(process.platform !== "win32")(
 		"settles after the shell exits when a detached descendant retains inherited stdio",
 		async () => {
@@ -576,50 +530,6 @@ describe("NodeExecutionEnv", () => {
 		const result = await promise;
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.error).toMatchObject({ code: "aborted" });
-	});
-
-	it.skipIf(process.platform === "win32")("ignores asynchronous taskkill spawn errors during abort", async () => {
-		const root = createTempDir();
-		const pidFile = join(root, "shell.pid");
-		const controller = new AbortController();
-		const env = new NodeExecutionEnv({ cwd: root, shellPath: "/bin/bash" });
-		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
-		const previousSystemRoot = process.env.SystemRoot;
-		process.env.SystemRoot = "/definitely/missing/windows";
-		Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
-
-		let pid: number | undefined;
-		try {
-			const execution = env.exec(
-				`echo $$ > ${toBashSingleQuotedArg(pidFile)}; exec sleep 60`,
-				undefined,
-				withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
-			);
-			for (let attempt = 0; attempt < 100 && !existsSync(pidFile); attempt++) {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-			}
-			expect(existsSync(pidFile)).toBe(true);
-
-			controller.abort();
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			pid = Number.parseInt(readFileSync(pidFile, "utf8"), 10);
-			process.kill(pid, "SIGKILL");
-
-			const result = await execution;
-			expect(result).toMatchObject({ ok: false, error: { code: "aborted" } });
-		} finally {
-			if (pid === undefined && existsSync(pidFile)) {
-				pid = Number.parseInt(readFileSync(pidFile, "utf8"), 10);
-			}
-			if (pid !== undefined && Number.isFinite(pid)) {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {}
-			}
-			if (previousSystemRoot === undefined) delete process.env.SystemRoot;
-			else process.env.SystemRoot = previousSystemRoot;
-			if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
-		}
 	});
 
 	it("does not create a spill before bounded output crosses its limits", async () => {

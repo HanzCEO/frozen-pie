@@ -38,21 +38,6 @@ function makeCompletionsModel(overrides?: Partial<Model<"openai-completions">>):
 	};
 }
 
-function makeAnthropicModel(): Model<"anthropic-messages"> {
-	return {
-		id: "vendor--claude",
-		name: "Vendor Proxy Claude",
-		api: "anthropic-messages",
-		provider: "vendor-proxy",
-		baseUrl: "http://127.0.0.1:9",
-		reasoning: true,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 200000,
-		maxTokens: 32000,
-	};
-}
-
 async function capturePayload(model: Model<Api>, options?: SimpleStreamOptions): Promise<SamplingPayload> {
 	let capturedPayload: SamplingPayload | undefined;
 
@@ -115,14 +100,5 @@ describe("sampling params", () => {
 		});
 
 		expect(payload.temperature).toBe(1);
-	});
-
-	it("is ignored by non-OpenAI-compatible APIs", async () => {
-		const payload = await capturePayload(makeAnthropicModel(), {
-			samplingParams: { top_p: 0.9, top_k: 40 },
-		});
-
-		expect(payload.top_p).toBeUndefined();
-		expect(payload.top_k).toBeUndefined();
 	});
 });
