@@ -12,6 +12,34 @@ import type {
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
 
+/**
+ * True when an errored or aborted assistant message carries safe text worth
+ * replaying into a follow-up request.
+ *
+ * An incomplete turn can leave behind a partial reasoning block with no text
+ * (replaying this triggers provider errors such as reasoning without following item),
+ * truncated tool-call arguments (replaying risks orphaned tool calls), or
+ * safe partial text. Keep the message only when it contains non-empty text and
+ * no tool calls.
+ */
+export function hasSafeReplayContent(message: AssistantMessage): boolean {
+	if (message.stopReason !== "error" && message.stopReason !== "aborted") {
+		return false;
+	}
+	let hasText = false;
+	for (const block of message.content) {
+		if (block.type === "toolCall") {
+			return false;
+		}
+		if (block.type === "text" && block.text.trim().length > 0) {
+			hasText = true;
+		}
+	}
+	return hasText;
+}
+
+export const hasReplayableText = hasSafeReplayContent;
+
 function replaceImagesWithPlaceholder(content: (TextContent | ImageContent)[], placeholder: string): TextContent[] {
 	const result: TextContent[] = [];
 	let previousWasPlaceholder = false;
@@ -186,13 +214,23 @@ export function transformMessages<TApi extends Api>(
 			// If we have pending orphaned tool calls from a previous assistant, insert synthetic results now
 			insertSyntheticToolResults();
 
-			// Skip errored/aborted assistant messages entirely.
-			// These are incomplete turns that shouldn't be replayed:
-			// - May have partial content (reasoning without message, incomplete tool calls)
-			// - Replaying them can cause API errors (e.g., OpenAI "reasoning without following item")
-			// - The model should retry from the last valid state
+			// Errored/aborted assistant messages are incomplete turns that shouldn't be
+			// replayed wholesale:
+			// - Partial reasoning without a following text/tool block causes provider
+			//   errors (e.g., [OI] "reasoning without following item", see #838/#812).
+			// - Tool calls from a failed turn may carry truncated arguments and were
+			//   never executed; replaying them risks orphaned tool calls.
+			// But when the failed stream left real partial text behind (e.g. a response
+			// cut off by "Stream ended without finish_reason"), dropping the message
+			// entirely makes a later "Continue" lose the partial generation. Keep the
+			// text (and thinking blocks, sanitized in the first pass) but strip tool
+			// calls so no orphaned-call invariants are created.
 			const assistantMsg = msg as AssistantMessage;
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				if (!hasSafeReplayContent(assistantMsg)) {
+					continue;
+				}
+				result.push(assistantMsg);
 				continue;
 			}
 

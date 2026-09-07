@@ -8,6 +8,7 @@ export * from "./api/lazy.ts";
 // "@earendil-works/pi-ai/compat".
 export type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
 export type { OpenAIResponsesOptions } from "./api/openai-responses.ts";
+export * from "./api/transform-messages.ts";
 export * from "./auth/context.ts";
 export * from "./auth/credential-store.ts";
 export * from "./auth/helpers.ts";

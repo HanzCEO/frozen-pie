@@ -357,8 +357,8 @@ export class Agent {
 		await this.runPromptMessages(messages);
 	}
 
-	/** Continue from the current transcript. The last message must be a user or tool-result message. */
-	async continue(): Promise<void> {
+	/** Continue from the current transcript. */
+	async continue(options?: { allowAssistant?: boolean }): Promise<void> {
 		if (this.activeRun) {
 			throw new Error("Agent is already processing. Wait for completion before continuing.");
 		}
@@ -381,10 +381,12 @@ export class Agent {
 				return;
 			}
 
-			throw new Error("Cannot continue from message role: assistant");
+			if (!options?.allowAssistant && lastMessage.stopReason !== "error" && lastMessage.stopReason !== "aborted") {
+				throw new Error("Cannot continue from message role: assistant");
+			}
 		}
 
-		await this.runContinuation();
+		await this.runContinuation(options);
 	}
 
 	private normalizePromptInput(
@@ -422,7 +424,7 @@ export class Agent {
 		});
 	}
 
-	private async runContinuation(): Promise<void> {
+	private async runContinuation(options?: { allowAssistant?: boolean }): Promise<void> {
 		await this.runWithLifecycle(async (signal) => {
 			await runAgentLoopContinue(
 				this.createContextSnapshot(),
@@ -430,6 +432,7 @@ export class Agent {
 				(event) => this.processEvents(event),
 				signal,
 				this.streamFunction,
+				options,
 			);
 		});
 	}

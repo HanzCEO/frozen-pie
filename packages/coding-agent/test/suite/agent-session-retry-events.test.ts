@@ -2,7 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHarness, type Harness } from "./harness.ts";
+import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 function normalizeEventOrder(events: Harness["events"]): string[] {
 	const normalized: string[] = [];
@@ -50,6 +50,27 @@ describe("AgentSession retry and event characterization", () => {
 		expect(harness.eventsOfType("agent_end").map((event) => event.willRetry)).toEqual([true, false]);
 		expect(harness.faux.state.callCount).toBe(2);
 		expect(harness.session.isRetrying).toBe(false);
+		expect(harness.session.agent.state.messages.filter((m) => m.role === "assistant").map(getMessageText)).toEqual([
+			"recovered",
+		]);
+	});
+
+	it("retains safe-to-replay partial output in agent state on retry", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage("partial text", { stopReason: "error", errorMessage: "overloaded_error" }),
+			fauxAssistantMessage("recovered"),
+		]);
+
+		await harness.session.prompt("test");
+
+		expect(harness.faux.state.callCount).toBe(2);
+		const assistantTexts = harness.session.agent.state.messages
+			.filter((m) => m.role === "assistant")
+			.map((m) => getMessageText(m));
+		expect(assistantTexts).toEqual(["partial text", "recovered"]);
 	});
 
 	it("retries multiple transient failures and succeeds on the final attempt", async () => {

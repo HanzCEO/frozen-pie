@@ -24,7 +24,7 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { contentText } from "@earendil-works/pi-ai";
+import { contentText, hasSafeReplayContent } from "@earendil-works/pi-ai";
 import type { AssistantMessage, ImageContent, Model, ProviderHeaders, TextContent } from "@earendil-works/pi-ai/compat";
 import {
 	clampThinkingLevel,
@@ -954,6 +954,21 @@ export class AgentSession {
 		}
 	}
 
+	private async _runAgentContinue(): Promise<void> {
+		this._isAgentRunActive = true;
+		try {
+			await this.agent.continue({ allowAssistant: true });
+			while (await this._handlePostAgentRun()) {
+				await this.agent.continue();
+			}
+		} finally {
+			this._systemPromptOverride = undefined;
+			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
+			await this._emitAgentSettled();
+		}
+	}
+
 	private async _handlePostAgentRun(): Promise<boolean> {
 		const msg = this._lastAssistantMessage;
 		this._lastAssistantMessage = undefined;
@@ -981,6 +996,33 @@ export class AgentSession {
 	}
 
 	/**
+	 * Continue generation without adding a new user message.
+	 * Resumes from the existing transcript context.
+	 */
+	async continue(): Promise<void> {
+		if (this.isStreaming) {
+			throw new Error("Agent is already running. Wait for completion before continuing.");
+		}
+		if (this.agent.state.messages.length === 0) {
+			throw new Error("No messages to continue from");
+		}
+		if (!this.model) {
+			throw new Error(formatNoModelSelectedMessage());
+		}
+		const hasConfiguredAuth =
+			this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
+			(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
+		if (!hasConfiguredAuth) {
+			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+		}
+
+		this._flushPendingBashMessages();
+		this._flushPendingCustomMessages();
+
+		await this._runAgentContinue();
+	}
+
+	/**
 	 * Send a prompt to the agent.
 	 * - Handles extension commands (registered via pi.registerCommand) immediately, even during streaming
 	 * - Expands file-based prompt templates by default
@@ -993,6 +1035,17 @@ export class AgentSession {
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
+
+		if (text.trim() === "/continue") {
+			try {
+				preflightResult?.(true);
+				await this.continue();
+				return;
+			} catch (error) {
+				preflightResult?.(false);
+				throw error;
+			}
+		}
 
 		try {
 			// Handle extension commands first (execute immediately, even during streaming)
@@ -2132,10 +2185,17 @@ export class AgentSession {
 			errorMessage: message.errorMessage || "Unknown error",
 		});
 
-		// Remove error message from agent state (keep in session for history)
+		// Remove error message from agent state only when it has no safe-to-replay content.
+		// When it has safe text, keep it in agent state so continuation replays the partial
+		// generation as context instead of restarting from scratch.
+		// Empty or incomplete errored messages are popped to preserve the invariant that
+		// agentLoopContinue can resume from the preceding user or toolResult message.
 		const messages = this.agent.state.messages;
 		if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
-			this.agent.state.messages = messages.slice(0, -1);
+			const lastAssistant = messages[messages.length - 1] as AssistantMessage;
+			if (!hasSafeReplayContent(lastAssistant)) {
+				this.agent.state.messages = messages.slice(0, -1);
+			}
 		}
 
 		// Wait with exponential backoff (abortable)

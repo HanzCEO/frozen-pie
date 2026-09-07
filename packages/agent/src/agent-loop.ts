@@ -67,12 +67,19 @@ export function agentLoopContinue(
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	streamFn: StreamFn,
+	options?: { allowAssistant?: boolean },
 ): EventStream<AgentEvent, AgentMessage[]> {
 	if (context.messages.length === 0) {
 		throw new Error("Cannot continue: no messages in context");
 	}
 
-	if (context.messages[context.messages.length - 1].role === "assistant") {
+	const lastMessage = context.messages[context.messages.length - 1];
+	if (
+		lastMessage.role === "assistant" &&
+		!options?.allowAssistant &&
+		lastMessage.stopReason !== "error" &&
+		lastMessage.stopReason !== "aborted"
+	) {
 		throw new Error("Cannot continue from message role: assistant");
 	}
 
@@ -86,6 +93,7 @@ export function agentLoopContinue(
 		},
 		signal,
 		streamFn,
+		options,
 	).then((messages) => {
 		stream.end(messages);
 	});
@@ -124,12 +132,19 @@ export async function runAgentLoopContinue(
 	emit: AgentEventSink,
 	signal: AbortSignal | undefined,
 	streamFn: StreamFn,
+	options?: { allowAssistant?: boolean },
 ): Promise<AgentMessage[]> {
 	if (context.messages.length === 0) {
 		throw new Error("Cannot continue: no messages in context");
 	}
 
-	if (context.messages[context.messages.length - 1].role === "assistant") {
+	const lastMessage = context.messages[context.messages.length - 1];
+	if (
+		lastMessage.role === "assistant" &&
+		!options?.allowAssistant &&
+		lastMessage.stopReason !== "error" &&
+		lastMessage.stopReason !== "aborted"
+	) {
 		throw new Error("Cannot continue from message role: assistant");
 	}
 

@@ -2820,6 +2820,22 @@ export class InteractiveMode {
 			if (!text) return;
 
 			// Handle commands
+			if (text === "/continue") {
+				if (this.session.isStreaming) {
+					this.showWarning("Agent is already running. Wait for completion before continuing.");
+					this.editor.setText("");
+					return;
+				}
+				this.editor.addToHistory?.(text);
+				this.editor.setText("");
+				try {
+					await this.session.continue();
+				} catch (error: unknown) {
+					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+					this.showError(errorMessage);
+				}
+				return;
+			}
 			if (text === "/settings") {
 				this.showSettingsSelector();
 				this.editor.setText("");
